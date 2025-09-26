@@ -1,90 +1,54 @@
-"""
-Template Component main class.
-
-"""
-
 import csv
 import logging
+from dataclasses import dataclass
 from datetime import datetime
-
 from keboola.component.base import ComponentBase
 from keboola.component.exceptions import UserException
-
 from configuration import Configuration
+from src.utils import (
+    validate_airtable_connection,
+    map_records,
+    process_records,
+    write_job_log,
+)
+
+
+@dataclass
+class AirtableWriterCacheEntry:
+    field_mapping: dict
+    computed_fields: list
 
 
 class Component(ComponentBase):
-    """
-    Extends base class for general Python components. Initializes the CommonInterface
-    and performs configuration validation.
-
-    For easier debugging the data folder is picked up by default from `../data` path,
-    relative to working directory.
-
-    If `debug` parameter is present in the `config.json`, the default logger is set to verbose DEBUG mode.
-    """
-
     def __init__(self):
         super().__init__()
+        self.params = Configuration(**self.configuration.parameters)
+        self.base_id = self.params.base_id if hasattr(self.params, 'base_id') else self.params.get('base_id')
+        self.table_name = self.params.table_name if hasattr(self.params, 'table_name') else self.params.get('table_name')
+        self.api_token = getattr(self.params, 'personal_access_token', None) or self.params.get('#personal_access_token')
+        self.writer_cache = {}
 
     def run(self):
-        """
-        Main execution code
-        """
+        import pandas as pd
+        import os
 
-        # ####### EXAMPLE TO REMOVE
-        # check for missing configuration parameters
-        params = Configuration(**self.configuration.parameters)
+        if not all([self.base_id, self.table_name, self.api_token]):
+            raise UserException("Missing one or more required parameters: base_id, table_name, #personal_access_token")
 
-        # Access parameters in configuration
-        if params.print_hello:
-            logging.info("Hello World")
+        logging.info(f"Connecting to Airtable base '{self.base_id}', table '{self.table_name}'...")
+        table, field_mapping, computed_fields = validate_airtable_connection(self.api_token, self.base_id, self.table_name)
+        self.writer_cache[self.table_name] = AirtableWriterCacheEntry(field_mapping, computed_fields)
 
-        # get input table definitions
         input_tables = self.get_input_tables_definitions()
-        for table in input_tables:
-            logging.info(f"Received input table: {table.name} with path: {table.full_path}")
-
-        if len(input_tables) == 0:
+        if not input_tables:
             raise UserException("No input tables found")
+        input_table_path = input_tables[0].full_path
+        df = pd.read_csv(input_table_path)
+        records = df.to_dict(orient="records")
 
-        # get last state data/in/state.json from previous run
-        previous_state = self.get_state_file()
-        logging.info(previous_state.get("some_parameter"))
-
-        # Create output table (Table definition - just metadata)
-        table = self.create_out_table_definition("output.csv", incremental=True, primary_key=["timestamp"])
-
-        # get file path of the table (data/out/tables/Features.csv)
-        out_table_path = table.full_path
-        logging.info(out_table_path)
-
-        # Add timestamp column and save into out_table_path
-        input_table = input_tables[0]
-        with (
-            open(input_table.full_path, "r") as inp_file,
-            open(table.full_path, mode="wt", encoding="utf-8", newline="") as out_file,
-        ):
-            reader = csv.DictReader(inp_file)
-
-            columns = list(reader.fieldnames)
-            # append timestamp
-            columns.append("timestamp")
-
-            # write result with column added
-            writer = csv.DictWriter(out_file, fieldnames=columns)
-            writer.writeheader()
-            for in_row in reader:
-                in_row["timestamp"] = datetime.now().isoformat()
-                writer.writerow(in_row)
-
-        # Save table manifest (output.csv.manifest) from the Table definition
-        self.write_manifest(table)
-
-        # Write new state - will be available next run
-        self.write_state_file({"some_state_parameter": "value"})
-
-        # ####### EXAMPLE TO REMOVE END
+        mapped_records = map_records(records, field_mapping, computed_fields)
+        log_rows = process_records(table, mapped_records)
+        write_job_log(self, log_rows)
 
 
 """
