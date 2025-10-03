@@ -2,18 +2,29 @@
   "type": "object",
   "title": "extractor configuration",
   "required": [
-    "print_hello"
+    "api_token",
+    "base_id",
+    "table_id"
   ],
   "properties": {
-    "print_hello": {
-      "type": "boolean",
-      "title": "Print Hello",
+    "api_token": {
+      "type": "string",
+      "format": "password",
+      "title": "API Token",
+      "description": "Valid PAT token",
       "propertyOrder": 1
     },
-    "debug": {
-      "type": "boolean",
-      "title": "Debug",
+    "base_id": {
+      "type": "string",
+      "title": "Base ID",
+      "description": "Base ID of the organization",
       "propertyOrder": 2
+    },
+    "table_id": {
+      "type": "string",
+      "title": "Table ID",
+      "description": "Table ID of data destination table",
+      "propertyOrder": 3
     }
   }
 }
