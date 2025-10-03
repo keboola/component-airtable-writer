@@ -3,6 +3,7 @@ exclude =
     __pycache__,
     .git,
     .venv,
-    venv
+    venv,
+    data
 ignore = E203,W503
 max-line-length = 120

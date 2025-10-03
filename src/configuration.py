@@ -1,26 +1,27 @@
-import logging
-
 from keboola.component.exceptions import UserException
-from pydantic import BaseModel, Field, ValidationError, field_validator
+from pydantic import BaseModel, Field, model_validator
 
 
 class Configuration(BaseModel):
-    print_hello: bool
+    base_id: str = Field(alias="base_id")
+    table_name: str = Field(alias="table_name")
     api_token: str = Field(alias="#api_token")
-    debug: bool = False
+    # debug: bool = False
 
-    def __init__(self, **data):
-        try:
-            super().__init__(**data)
-        except ValidationError as e:
-            error_messages = [f"{err['loc'][0]}: {err['msg']}" for err in e.errors()]
-            raise UserException(f"Validation Error: {', '.join(error_messages)}")
+    @model_validator(mode="after")
+    def check_token(self):
+        if not self.api_token:
+            raise UserException("API token must be entered")
+        return self
 
-        if self.debug:
-            logging.debug("Component will run in Debug mode")
+    @model_validator(mode="after")
+    def check_table_name(self):
+        if not self.table_name:
+            raise UserException("Table Name must be entered")
+        return self
 
-    @field_validator("api_token")
-    def token_must_be_uppercase(cls, v):
-        if not v.isupper():
-            raise UserException("API token must be uppercase")
-        return v
+    @model_validator(mode="after")
+    def check_base_id(self):
+        if not self.base_id:
+            raise UserException("Base ID must be entered")
+        return self

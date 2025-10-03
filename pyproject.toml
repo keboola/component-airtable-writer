@@ -15,3 +15,17 @@ dependencies = [
     "pandas>=2.0.0",
     "pyairtable>=2.1.0",
 ]
+
+[tool.black]
+line-length = 88
+exclude = '''
+/(
+    \.git
+  | \.venv
+  | venv
+  | env
+  | build
+  | dist
+  | data
+)/
+'''
