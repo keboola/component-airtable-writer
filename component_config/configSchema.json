@@ -1,30 +1,16 @@
 {
   "type": "object",
-  "title": "extractor configuration",
+  "title": "Connection",
   "required": [
-    "api_token",
-    "base_id",
-    "table_id"
+    "#api_token"
   ],
   "properties": {
-    "api_token": {
+    "#api_token": {
       "type": "string",
       "format": "password",
       "title": "API Token",
       "description": "Valid PAT token",
       "propertyOrder": 1
-    },
-    "base_id": {
-      "type": "string",
-      "title": "Base ID",
-      "description": "Base ID of the organization",
-      "propertyOrder": 2
-    },
-    "table_id": {
-      "type": "string",
-      "title": "Table ID",
-      "description": "Table ID of data destination table",
-      "propertyOrder": 3
     }
   }
 }
