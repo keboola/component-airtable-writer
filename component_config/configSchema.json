@@ -1,19 +1,16 @@
 {
   "type": "object",
-  "title": "extractor configuration",
+  "title": "Connection",
   "required": [
-    "print_hello"
+    "#api_token"
   ],
   "properties": {
-    "print_hello": {
-      "type": "boolean",
-      "title": "Print Hello",
+    "#api_token": {
+      "type": "string",
+      "format": "password",
+      "title": "API Token",
+      "description": "Valid PAT token",
       "propertyOrder": 1
-    },
-    "debug": {
-      "type": "boolean",
-      "title": "Debug",
-      "propertyOrder": 2
     }
   }
 }

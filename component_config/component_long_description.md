@@ -1,1 +1,1 @@
-TODO
+The component allows writing datasets from KBC Storage into Airtable, a cloud platform that combines the simplicity of spreadsheets with the power of relational databases. Airtable is widely used for project management, content planning, CRM, and workflow automation thanks to its intuitive interface and flexible data structures. By connecting Keboola with Airtable, this component enables seamless synchronization of structured data into Airtable bases and tables, making it easier for teams to collaborate, visualize, and act on their data within Airtable’s ecosystem.

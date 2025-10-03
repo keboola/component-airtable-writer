@@ -1,1 +1,95 @@
-{}
+{
+    "type": "object",
+    "title": "Table configuration",
+    "required": [
+        "base_id",
+        "table_name",
+        "destination"
+    ],
+    "properties": {
+        "base_id": {
+            "type": "string",
+            "title": "Base ID",
+            "description": "The ID of the Airtable base where the table will be created.",
+            "propertyOrder": 1
+        },
+        "table_name": {
+            "type": "string",
+            "title": "Table Name",
+            "description": "The name of the table to be created in the specified base.",
+            "propertyOrder": 2
+        },
+        "destination": {
+            "type": "object",
+            "title": "Destination",
+            "required": [
+                "columns"
+            ],
+            "propertyOrder": 3,
+            "properties": {
+                "columns": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "title": "Column",
+                        "required": [
+                            "source_name",
+                            "destination_name"
+                        ],
+                        "properties": {
+                            "source_name": {
+                                "type": "string",
+                                "title": "Source Column",
+                                "watch": {
+                                    "columns": "_metadata_.table.columns"
+                                },
+                                "enumSource": "columns",
+                                "propertyOrder": 1
+                            },
+                            "destination_name": {
+                                "type": "string",
+                                "title": "Destination Column",
+                                "propertyOrder": 2
+                            },
+                            "dtype": {
+                                "type": "string",
+                                "title": "Data Type",
+                                "enum": [
+                                    "BIGINT",
+                                    "BIT",
+                                    "BLOB",
+                                    "BOOLEAN",
+                                    "DATE",
+                                    "DECIMAL(18,3)",
+                                    "DOUBLE",
+                                    "FLOAT",
+                                    "HUGEINT",
+                                    "INTEGER",
+                                    "INTERVAL",
+                                    "JSON",
+                                    "SMALLINT",
+                                    "TIME",
+                                    "TIMESTAMP WITH TIME ZONE",
+                                    "TIMESTAMP",
+                                    "TINYINT",
+                                    "UBIGINT",
+                                    "UHUGEINT",
+                                    "UINTEGER",
+                                    "USMALLINT",
+                                    "UTINYINT",
+                                    "UUID",
+                                    "VARCHAR"
+                                ],
+                                "default": "VARCHAR",
+                                "propertyOrder": 3
+                            }
+                        }
+                    },
+                    "title": "Columns",
+                    "format": "table",
+                    "propertyOrder": 3
+                }
+            }
+        }
+    }
+}
