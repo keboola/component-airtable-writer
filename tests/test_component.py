@@ -1,12 +1,8 @@
 import os
-import sys
 import unittest
 
 import mock
 from freezegun import freeze_time
-
-# Add src directory to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from component import Component
 

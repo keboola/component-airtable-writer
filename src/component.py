@@ -52,7 +52,7 @@ class Component(ComponentBase):
 
             # Process the records with enhanced batch functionality
             records = df.to_dict(orient="records")
-            mapped_records = map_records(records, field_mapping, computed_fields)
+            mapped_records = map_records(records, field_mapping)
 
             # TODO: Make upsert key fields configurable via params
             # Using new batch processing - always batches even for single records

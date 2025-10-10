@@ -80,7 +80,7 @@ def process_records_batch(
             records_to_update.append({"id": record_id, "fields": record_data})
         else:
             # No recordId - create operation (or upsert if key fields specified)
-            records_to_create.append({"fields": record_data})
+            records_to_create.append(record_data)
 
     total_processed = 0
     total_created = 0
