@@ -9,6 +9,8 @@ from utils import (
     get_table_schema,
     compare_schemas,
     process_records_batch,
+    clear_table_for_full_load,
+    get_primary_key_fields,
 )
 import pandas as pd
 
@@ -33,12 +35,19 @@ class Component(ComponentBase):
             )
 
             # Get or create table based on input data
+            column_configs = (
+                params.destination.columns if params.destination.columns else None
+            )
             table = get_or_create_table(
-                params.api_token, params.base_id, params.table_name, df
+                params.api_token, params.base_id, params.table_name, df, column_configs
             )
 
+            # Handle different load types
+            if params.destination.load_type == "full_load":
+                clear_table_for_full_load(table)
+
             # Get field mapping for the table
-            field_mapping, computed_fields = fetch_field_mapping(table, df)
+            field_mapping = fetch_field_mapping(table, df, column_configs)
 
             # Compare schemas and log any differences
             table_schema = get_table_schema(table)
@@ -54,12 +63,25 @@ class Component(ComponentBase):
             records = df.to_dict(orient="records")
             mapped_records = map_records(records, field_mapping)
 
-            # TODO: Make upsert key fields configurable via params
+            # Determine upsert key fields based on load type
+            upsert_key_fields = None
+            if params.destination.load_type == "incremental_load":
+                upsert_key_fields = get_primary_key_fields(params.destination.columns)
+                if not upsert_key_fields:
+                    logging.warning(
+                        "⚠️ Incremental load specified but no primary key columns found. Using append mode."
+                    )
+                else:
+                    logging.info(
+                        f"Using primary key fields for incremental load: {upsert_key_fields}"
+                    )
+
             # Using new batch processing - always batches even for single records
-            process_records_batch(table, mapped_records, upsert_key_fields=None)
+            process_records_batch(
+                table, mapped_records, upsert_key_fields=upsert_key_fields
+            )
 
         except Exception as e:
-            logging.error(f"❌ Failed to process data: {e}")
             raise UserException(f"Failed to process data: {str(e)}")
 
 

@@ -1,21 +1,21 @@
 from enum import Enum
 from typing import Optional
 from keboola.component.exceptions import UserException
-from pydantic import BaseModel, Field, computed_field, computed_field, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 
 class LoadType(str, Enum):
     full_load = "full_load"
     incremental_load = "incremental_load"
     append = "append"
-    
+
 
 class ColumnConfig(BaseModel):
     source_name: str
     destination_name: str
     dtype: str
     pk: bool
-    
+
 
 class Destination(BaseModel):
     table: Optional[str] = None

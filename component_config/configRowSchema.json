@@ -19,12 +19,25 @@
       "description": "The name of the table to be created in the specified base.",
       "propertyOrder": 2
     },
+    "load_type": {
+        "enum": [
+        "full_load",
+        "incremental_load", 
+        "append"
+        ],
+        "type": "string",
+        "title": "Load Type",
+        "default": "append",
+        "description": "full_load: Delete all rows and reload from scratch. incremental_load: Update existing records using primary keys. append: Add new records without checking for duplicates.",
+        "propertyOrder": 3
+    },
     "destination": {
       "type": "object",
       "title": "Destination",
       "required": [
         "columns"
       ],
+      "propertyOrder": 4,
       "properties": {
         "columns": {
           "type": "array",
@@ -59,44 +72,45 @@
               },
               "dtype": {
                 "enum": [
-                  "BIGINT",
-                  "BIT",
-                  "BLOB",
-                  "BOOLEAN",
-                  "DATE",
-                  "DECIMAL(18,3)",
-                  "DOUBLE",
-                  "FLOAT",
-                  "HUGEINT",
-                  "INTEGER",
-                  "INTERVAL",
-                  "JSON",
-                  "SMALLINT",
-                  "TIME",
-                  "TIMESTAMP WITH TIME ZONE",
-                  "TIMESTAMP",
-                  "TINYINT",
-                  "UBIGINT",
-                  "UHUGEINT",
-                  "UINTEGER",
-                  "USMALLINT",
-                  "UTINYINT",
-                  "UUID",
-                  "VARCHAR"
+                  "singleLineText",
+                  "multilineText",
+                  "richText",
+                  "email",
+                  "url",
+                  "phoneNumber",
+                  "number",
+                  "percent",
+                  "currency",
+                  "singleSelect",
+                  "multipleSelects",
+                  "date",
+                  "dateTime",
+                  "checkbox",
+                  "rating",
+                  "barcode",
+                  "attachment",
+                  "formula",
+                  "rollup",
+                  "count",
+                  "lookup",
+                  "createdTime",
+                  "lastModifiedTime",
+                  "createdBy",
+                  "lastModifiedBy",
+                  "autoNumber"
                 ],
                 "type": "string",
-                "title": "Data Type",
-                "default": "VARCHAR",
+                "title": "Airtable Field Type",
+                "default": "singleLineText",
                 "propertyOrder": 4
               }
             }
           },
           "title": "Columns",
           "format": "table",
-          "propertyOrder": 3
+          "propertyOrder": 2
         }
-      },
-      "propertyOrder": 3
+      }
     },
     "_metadata_": {
       "type": "object",

@@ -242,11 +242,12 @@ def process_upsert_batches(
 
         try:
             # Use Airtable's native upsert via batch_upsert
-            # Note: This may require using table.batch_update with performUpsert=True
+            # Note: For upsert, records need to be in {"fields": {...}} format
+            upsert_batch = [{"fields": record} for record in batch]
 
             # Call the API directly since pyairtable might not have batch_upsert
             response = table.batch_update(
-                batch, upsert=upsert_key_fields, typecast=True
+                upsert_batch, upsert=upsert_key_fields, typecast=True
             )
 
             # Handle upsert response
@@ -432,16 +433,29 @@ def update_lookup_map_with_new_record(
         logging.debug(f"Error updating lookup map: {e}")
 
 
-def fetch_field_mapping(table: Table, input_df: pd.DataFrame = None):
+def fetch_field_mapping(
+    table: Table, input_df: pd.DataFrame = None, column_configs: List = None
+):
     """
     Fetch field mapping and computed fields from the Airtable table.
 
     Args:
         table: Airtable table object
         input_df: Optional input DataFrame (used if table schema is unavailable)
+        column_configs: List of ColumnConfig objects for custom mapping
     Returns:
         Tuple of (field mapping dict, list of computed fields)
     """
+    # If custom column mapping is provided, use it
+    if column_configs:
+        mapping = {}
+        for col_config in column_configs:
+            mapping[col_config.source_name] = col_config.destination_name
+
+        logging.info(f"🧭 Using custom field mapping: {mapping}")
+        return mapping
+
+    # Fallback to automatic mapping
     try:
         # Use table schema to get field information directly from metadata
         table_schema = table.schema()
@@ -478,6 +492,54 @@ def fetch_field_mapping(table: Table, input_df: pd.DataFrame = None):
     return mapping, computed_fields
 
 
+def clear_table_for_full_load(table: Table):
+    """
+    Delete all records from the table in preparation for a full load operation.
+
+    Args:
+        table: Airtable table object
+    """
+    try:
+        # Get all record IDs
+        all_records = table.all(fields=[])  # Only get IDs, no field data
+        record_ids = [record["id"] for record in all_records]
+
+        if not record_ids:
+            logging.info("📭 Table is already empty, nothing to delete")
+            return
+
+        logging.info(f"🗑️ Full load: Deleting {len(record_ids)} existing records")
+
+        # Delete in batches (Airtable limit is 10 per batch)
+        batch_size = 10
+        for i in range(0, len(record_ids), batch_size):
+            batch_ids = record_ids[i : i + batch_size]
+            table.batch_delete(batch_ids)
+            logging.debug(f"✅ Deleted batch of {len(batch_ids)} records")
+
+        logging.info(f"✅ Successfully deleted all {len(record_ids)} records")
+
+    except Exception as e:
+        logging.error(f"❌ Failed to delete records for full load: {e}")
+        raise
+
+
+def get_primary_key_fields(column_configs: List) -> List[str]:
+    """
+    Extract primary key field names from column configurations.
+
+    Args:
+        column_configs: List of ColumnConfig objects
+    Returns:
+        List of destination field names marked as primary keys
+    """
+    pk_fields = []
+    for col_config in column_configs:
+        if col_config.pk:
+            pk_fields.append(col_config.destination_name)
+    return pk_fields
+
+
 def validate_connection(api_token: str, base_id: str, table_name: str) -> Table:
     """
     Connect to Airtable using the API token and check access to the base and table.
@@ -512,7 +574,11 @@ def validate_connection(api_token: str, base_id: str, table_name: str) -> Table:
 
 
 def get_or_create_table(
-    api_token: str, base_id: str, table_name: str, input_df: pd.DataFrame
+    api_token: str,
+    base_id: str,
+    table_name: str,
+    input_df: pd.DataFrame,
+    column_configs: List = None,
 ) -> Table:
     """
     Get an existing table by name, or create it if it doesn't exist.
@@ -523,6 +589,7 @@ def get_or_create_table(
         base_id: Airtable base ID
         table_name: Table name
         input_df: Input DataFrame to infer schema if table needs to be created
+        column_configs: Optional list of ColumnConfig objects for custom field types
     Returns:
         Table object
     """
@@ -543,10 +610,12 @@ def get_or_create_table(
         logging.debug(f"Error details: {e}")
 
         # Create new table with schema from input data
-        return create_table_from_dataframe(base, table_name, input_df)
+        return create_table_from_dataframe(base, table_name, input_df, column_configs)
 
 
-def create_table_from_dataframe(base: Base, table_name: str, df: pd.DataFrame) -> Table:
+def create_table_from_dataframe(
+    base: Base, table_name: str, df: pd.DataFrame, column_configs: List = None
+) -> Table:
     """
     Create a new Airtable table based on DataFrame schema.
     NOTE: Table creation via API requires specific permissions and may not be available in all plans.
@@ -555,10 +624,22 @@ def create_table_from_dataframe(base: Base, table_name: str, df: pd.DataFrame) -
         base: Airtable Base object
         table_name: Name of the table to create
         df: DataFrame to infer schema from
+        column_configs: Optional list of ColumnConfig objects for custom field types
     Returns:
         Created Table object
     """
-    fields = infer_airtable_fields_from_dataframe(df)
+    if column_configs:
+        # Use custom column configurations
+        fields = []
+        for col_config in column_configs:
+            field_config = {
+                "name": col_config.destination_name,
+                "type": col_config.dtype,
+            }
+            fields.append(field_config)
+    else:
+        # Fallback to automatic inference
+        fields = infer_airtable_fields_from_dataframe(df)
 
     # Ensure at least one field exists and first field can be primary
     if not fields:
@@ -744,8 +825,10 @@ def _append_log_row(log_rows, record_id, status):
     """
     Helper to append a log row with current timestamp, record_id, and status.
     """
-    log_rows.append({
-        "datetime": datetime.utcnow().isoformat(),
-        "record_id": record_id,
-        "status": status,
-    })
+    log_rows.append(
+        {
+            "datetime": datetime.utcnow().isoformat(),
+            "record_id": record_id,
+            "status": status,
+        }
+    )
