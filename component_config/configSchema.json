@@ -9,7 +9,7 @@
       "type": "string",
       "format": "password",
       "title": "API Token",
-      "description": "Valid PAT token",
+      "description": "Valid PAT token. Should have data.records:write. Optionally schema.bases:write if adding or editing new tables via component.",
       "propertyOrder": 1
     }
   }

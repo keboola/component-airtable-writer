@@ -1,95 +1,128 @@
 {
-    "type": "object",
-    "title": "Table configuration",
-    "required": [
-        "base_id",
-        "table_name",
-        "destination"
-    ],
-    "properties": {
-        "base_id": {
-            "type": "string",
-            "title": "Base ID",
-            "description": "The ID of the Airtable base where the table will be created.",
-            "propertyOrder": 1
+  "type": "object",
+  "title": "Table configuration",
+  "required": ["base_id", "table_name", "destination"],
+  "properties": {
+    "base_id": {
+      "type": "string",
+      "title": "Base ID",
+      "description": "The ID of the Airtable base where the table is located.",
+      "propertyOrder": 1
+    },
+    "table_name": {
+      "type": "string",
+      "title": "Table Name",
+      "description": "The name of the table to be created/updated in the specified base.",
+      "propertyOrder": 2
+    },
+    "destination": {
+      "type": "object",
+      "title": "Destination",
+      "required": ["columns", "load_type"],
+      "propertyOrder": 4,
+      "properties": {
+        "load_type": {
+          "enum": ["Full Load", "Incremental Load", "Append"],
+          "type": "string",
+          "title": "Load Type",
+          "default": "Append",
+          "description": "Full Load: Delete all rows and reload from scratch;\nIncremental Load: Update existing records using primary keys;\nAppend: Add new records without checking for duplicates.",
+          "propertyOrder": 1
         },
-        "table_name": {
-            "type": "string",
-            "title": "Table Name",
-            "description": "The name of the table to be created in the specified base.",
-            "propertyOrder": 2
-        },
-        "destination": {
+        "columns": {
+          "type": "array",
+          "items": {
             "type": "object",
-            "title": "Destination",
-            "required": [
-                "columns"
-            ],
-            "propertyOrder": 3,
+            "title": "Column",
+            "required": ["source_name", "destination_name"],
             "properties": {
-                "columns": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "title": "Column",
-                        "required": [
-                            "source_name",
-                            "destination_name"
-                        ],
-                        "properties": {
-                            "source_name": {
-                                "type": "string",
-                                "title": "Source Column",
-                                "watch": {
-                                    "columns": "_metadata_.table.columns"
-                                },
-                                "enumSource": "columns",
-                                "propertyOrder": 1
-                            },
-                            "destination_name": {
-                                "type": "string",
-                                "title": "Destination Column",
-                                "propertyOrder": 2
-                            },
-                            "dtype": {
-                                "type": "string",
-                                "title": "Data Type",
-                                "enum": [
-                                    "BIGINT",
-                                    "BIT",
-                                    "BLOB",
-                                    "BOOLEAN",
-                                    "DATE",
-                                    "DECIMAL(18,3)",
-                                    "DOUBLE",
-                                    "FLOAT",
-                                    "HUGEINT",
-                                    "INTEGER",
-                                    "INTERVAL",
-                                    "JSON",
-                                    "SMALLINT",
-                                    "TIME",
-                                    "TIMESTAMP WITH TIME ZONE",
-                                    "TIMESTAMP",
-                                    "TINYINT",
-                                    "UBIGINT",
-                                    "UHUGEINT",
-                                    "UINTEGER",
-                                    "USMALLINT",
-                                    "UTINYINT",
-                                    "UUID",
-                                    "VARCHAR"
-                                ],
-                                "default": "VARCHAR",
-                                "propertyOrder": 3
-                            }
-                        }
-                    },
-                    "title": "Columns",
-                    "format": "table",
-                    "propertyOrder": 3
-                }
+              "source_name": {
+                "type": "string",
+                "title": "Source Column",
+                "watch": {
+                  "columns": "_metadata_.table.columns"
+                },
+                "enumSource": "columns",
+                "propertyOrder": 1
+              },
+              "destination_name": {
+                "type": "string",
+                "title": "Destination Column",
+                "propertyOrder": 2
+              },
+              "pk": {
+                "type": "boolean",
+                "title": "Primary Key",
+                "format": "checkbox",
+                "default": false,
+                "propertyOrder": 3
+              },
+              "dtype": {
+                "enum": [
+                  "singleLineText",
+                  "multilineText",
+                  "richText",
+                  "email",
+                  "url",
+                  "phoneNumber",
+                  "number",
+                  "percent",
+                  "currency",
+                  "singleSelect",
+                  "multipleSelects",
+                  "date",
+                  "dateTime",
+                  "checkbox",
+                  "rating",
+                  "barcode",
+                  "attachment",
+                  "formula",
+                  "rollup",
+                  "count",
+                  "lookup",
+                  "createdTime",
+                  "lastModifiedTime",
+                  "createdBy",
+                  "lastModifiedBy",
+                  "autoNumber"
+                ],
+                "type": "string",
+                "title": "Airtable Field Type",
+                "default": "singleLineText",
+                "propertyOrder": 4
+              }
             }
+          },
+          "title": "Columns",
+          "format": "table",
+          "propertyOrder": 2
         }
+      }
+    },
+    "_metadata_": {
+      "type": "object",
+      "options": {
+        "hidden": true
+      },
+      "properties": {
+        "table": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "columns": {
+              "type": "array"
+            },
+            "primaryKey": {
+              "type": "array"
+            }
+          }
+        }
+      }
     }
+  }
 }
