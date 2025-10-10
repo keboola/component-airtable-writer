@@ -6,12 +6,39 @@ from typing import Dict, List
 from keboola.component.exceptions import UserException
 
 
+def validate_field_mapping(input_columns: List[str], field_mapping: Dict) -> List[str]:
+    """
+    Validate field mapping and return list of mappable columns.
+
+    Args:
+        input_columns: List of input column names
+        field_mapping: Mapping from input column names to Airtable field names
+
+    Returns:
+        List of column names that can be mapped (includes recordId if present)
+    """
+    unmapped_columns = []
+    mappable_columns = []
+
+    for col in input_columns:
+        if col == "recordId" or col in field_mapping:
+            mappable_columns.append(col)
+        else:
+            unmapped_columns.append(col)
+
+    if unmapped_columns:
+        logging.debug(f"🔍 Columns not mapped and will be skipped: {unmapped_columns}")
+
+    return mappable_columns
+
+
 def map_records(records: List, field_mapping: Dict) -> List:
     """
     Map input records to Airtable field names using the provided field mapping.
+    Note: Input records should already be filtered to only include mappable columns.
 
     Args:
-        records: List of input records (dicts).
+        records: List of input records (dicts) with only mappable columns.
         field_mapping: Mapping from input column names to Airtable field names.
 
     Returns:
@@ -39,15 +66,14 @@ def map_records(records: List, field_mapping: Dict) -> List:
         for k, v in rec.items():
             if k == "recordId":
                 continue
-            airtable_field = field_mapping.get(k)
-            if airtable_field:
-                # Handle None/NaN values properly
-                if pd.isna(v) or v is None:
-                    mapped[airtable_field] = None
-                else:
-                    mapped[airtable_field] = v
+            # All columns should be mappable at this point
+            airtable_field = field_mapping[k]
+            # Handle None/NaN values properly
+            if pd.isna(v) or v is None:
+                mapped[airtable_field] = None
             else:
-                logging.warning(f"⚠️ No match found in Airtable for input column: '{k}'")
+                mapped[airtable_field] = v
+
         mapped_records.append((record_id, mapped))
     return mapped_records
 
@@ -55,71 +81,61 @@ def map_records(records: List, field_mapping: Dict) -> List:
 def process_records_batch(
     table: Table,
     mapped_records: List,
+    load_type: str,
     upsert_key_fields: List = None,
     batch_size: int = 10,
 ) -> None:
     """
-    Process records using Airtable's native batch API with built-in upsert support.
-    Always uses batch operations even for single records for consistency and performance.
+    Process records using Airtable's batch API, branching by load_type.
 
     Args:
         table: Airtable table object
         mapped_records: List of (record_id, record_data) tuples
-        upsert_key_fields: Fields to use for upsert matching (uses Airtable's native upsert)
+        load_type: One of 'full_load', 'incremental_load', 'append'
+        upsert_key_fields: Fields to use for upsert matching (for incremental_load)
         batch_size: Maximum records per batch (Airtable limit is 10)
     """
     log_rows = []
-
-    # Split records into creates and updates
-    records_to_create = []
-    records_to_update = []
-
-    for record_id, record_data in mapped_records:
-        if record_id:
-            # Has recordId - update operation
-            records_to_update.append({"id": record_id, "fields": record_data})
-        else:
-            # No recordId - create operation (or upsert if key fields specified)
-            records_to_create.append(record_data)
-
     total_processed = 0
     total_created = 0
     total_updated = 0
     total_errors = 0
 
-    # Process updates in batches
-    if records_to_update:
-        logging.info(
-            f"Processing {len(records_to_update)} updates in batches of {batch_size}"
-        )
-        update_results = process_update_batches(table, records_to_update, batch_size)
-        log_rows.extend(update_results["log_rows"])
-        total_updated += update_results["updated_count"]
-        total_errors += update_results["error_count"]
-        total_processed += len(records_to_update)
+    # For all load types, ignore record_id (Keboola does not persist them)
+    records = [record_data for _, record_data in mapped_records]
 
-    # Process creates in batches (with optional upsert)
-    if records_to_create:
-        if upsert_key_fields:
-            logging.info(
-                f"Processing {len(records_to_create)} upserts using fields: {upsert_key_fields}"
-            )
-            create_results = process_upsert_batches(
-                table, records_to_create, upsert_key_fields, batch_size
-            )
-        else:
-            logging.info(
-                f"Processing {len(records_to_create)} creates in batches of {batch_size}"
-            )
-            create_results = process_create_batches(
-                table, records_to_create, batch_size
-            )
-
+    if load_type == "full_load":
+        # Table should already be cleared before this is called
+        logging.info(f"Processing {len(records)} records as creates (full load)")
+        create_results = process_create_batches(table, records, batch_size)
         log_rows.extend(create_results["log_rows"])
         total_created += create_results["created_count"]
-        total_updated += create_results.get("updated_count", 0)  # For upserts
         total_errors += create_results["error_count"]
-        total_processed += len(records_to_create)
+        total_processed += len(records)
+
+    elif load_type == "incremental_load":
+        logging.info(
+            f"Processing {len(records)} records as upserts (incremental load) using keys: {upsert_key_fields}"
+        )
+        upsert_results = process_upsert_batches(
+            table, records, upsert_key_fields, batch_size
+        )
+        log_rows.extend(upsert_results["log_rows"])
+        total_created += upsert_results["created_count"]
+        total_updated += upsert_results.get("updated_count", 0)
+        total_errors += upsert_results["error_count"]
+        total_processed += len(records)
+
+    elif load_type == "append":
+        logging.info(f"Processing {len(records)} records as creates (append mode)")
+        create_results = process_create_batches(table, records, batch_size)
+        log_rows.extend(create_results["log_rows"])
+        total_created += create_results["created_count"]
+        total_errors += create_results["error_count"]
+        total_processed += len(records)
+
+    else:
+        raise UserException(f"Unknown load_type: {load_type}")
 
     # Log final summary
     logging.info(
@@ -242,32 +258,37 @@ def process_upsert_batches(
 
         try:
             # Use Airtable's native upsert via batch_upsert
-            # Note: For upsert, records need to be in {"fields": {...}} format
             upsert_batch = [{"fields": record} for record in batch]
-
-            # Call the API directly since pyairtable might not have batch_upsert
-            response = table.batch_update(
-                upsert_batch, upsert=upsert_key_fields, typecast=True
+            response = table.batch_upsert(
+                upsert_batch, key_fields=upsert_key_fields, typecast=True
             )
 
             # Handle upsert response
-            for record in response:
+            for record in response.get("records", []):
                 record_id = record["id"]
-                # Airtable doesn't clearly indicate if it was create or update in standard response
-                # We'll mark as "upsert" for clarity
                 _append_log_row(log_rows, record_id, "upsert")
 
-            # For summary, assume all are creates (conservative estimate)
-            created_count += len(batch)
-            logging.debug(f"✅ Upserted batch of {len(batch)} records")
+            # Count created/updated
+            created_count += len(response.get("createdRecords", []))
+            updated_count += len(response.get("updatedRecords", []))
+            logging.debug(
+                f"✅ Upserted batch: {len(response.get('createdRecords', []))} created,"
+                f"{len(response.get('updatedRecords', []))} updated"
+            )
 
         except Exception as e:
-            logging.error(f"❌ Batch upsert failed: {str(e)}", exc_info=True)
-
-            # Fallback: try individual operations or log as errors
-            for j, record in enumerate(batch):
-                error_count += 1
-                _append_log_row(log_rows, f"batch_{i // batch_size}_row_{j}", "error")
+            if "INVALID_VALUE_FOR_COLUMN" in str(e):
+                raise UserException(
+                    "Airtable upsert failed: The upsert key fields do not uniquely identify records in the table. "
+                    "Please ensure the combination of upsert key fields is unique for all records."
+                    f"Airtable error: {str(e)}"
+                )
+            if "INVALID_RECORDS" in str(e):
+                raise UserException(
+                    "Airtable upsert failed: Your input data contains duplicate values for the upsert key. "
+                    "Please ensure there are no duplicate records for the upsert key fields in your input data.\n"
+                    f"Airtable error: {str(e)}"
+                )
 
     return {
         "log_rows": log_rows,
@@ -277,219 +298,26 @@ def process_upsert_batches(
     }
 
 
-def build_upsert_lookup_map(table: Table, key_fields: List) -> Dict:
-    """
-    Build a lookup map of existing records using specified key fields.
-
-    Args:
-        table: Airtable table object
-        key_fields: List of key field names
-    Returns:
-        Dict where keys are tuples of key field values, values are record IDs.
-    """
-    lookup_map = {}
-
-    try:
-        # Fetch existing records with pagination for large tables
-        all_records = []
-        offset = None
-        page_size = 100  # Airtable's max page size
-
-        while True:
-            if offset:
-                records_page = table.all(page_size=page_size, offset=offset)
-            else:
-                records_page = table.all(page_size=page_size)
-
-            if not records_page:
-                break
-
-            all_records.extend(records_page)
-
-            # Check if there are more records
-            if len(records_page) < page_size:
-                break
-
-            # Get offset for next page (this depends on pyairtable implementation)
-            try:
-                offset = records_page[-1]["id"]
-            except Exception:
-                break  # Fallback if pagination doesn't work as expected
-
-        logging.info(
-            f"📋 Fetched {len(all_records)} existing records for upsert lookup"
-        )
-
-        for record in all_records:
-            record_id = record["id"]
-            fields = record.get("fields", {})
-
-            # Build key tuple from specified key fields
-            key_values = []
-            has_all_keys = True
-
-            for key_field in key_fields:
-                value = fields.get(key_field)
-                if value is None or value == "":
-                    has_all_keys = False
-                    break
-                key_values.append(str(value).strip())
-
-            if has_all_keys:
-                key_tuple = tuple(key_values)
-                if key_tuple in lookup_map:
-                    logging.warning(
-                        f"⚠️ Duplicate key found: {key_tuple}. Will use first occurrence."
-                    )
-                else:
-                    lookup_map[key_tuple] = record_id
-
-        logging.info(
-            f"🗂️ Built lookup map with {len(lookup_map)} unique key combinations"
-        )
-        return lookup_map
-
-    except Exception as e:
-        logging.error(f"❌ Failed to build upsert lookup map: {e}")
-        # Fallback to simple approach without pagination
-        try:
-            simple_records = table.all(max_records=1000)  # Limit to prevent timeouts
-            logging.warning("⚠️ Using fallback pagination with max 1000 records")
-            for record in simple_records:
-                record_id = record["id"]
-                fields = record.get("fields", {})
-
-                key_values = []
-                has_all_keys = True
-
-                for key_field in key_fields:
-                    value = fields.get(key_field)
-                    if value is None or value == "":
-                        has_all_keys = False
-                        break
-                    key_values.append(str(value).strip())
-
-                if has_all_keys:
-                    key_tuple = tuple(key_values)
-                    lookup_map[key_tuple] = record_id
-
-            return lookup_map
-        except Exception:
-            return {}
-
-
-def find_existing_record_by_keys(
-    record: Dict, lookup_map: Dict, key_fields: List
-) -> str | None:
-    """
-    Find existing record ID by matching key field values.
-
-    Args:
-        record: Input record dict
-        lookup_map: Lookup map from build_upsert_lookup_map
-        key_fields: List of key field names
-    Returns:
-        Record ID if found, else None
-    """
-    try:
-        key_values = []
-        for key_field in key_fields:
-            value = record.get(key_field)
-            if value is None or value == "":
-                return None  # Missing key field value
-            key_values.append(str(value).strip())
-
-        key_tuple = tuple(key_values)
-        return lookup_map.get(key_tuple)
-    except Exception as e:
-        logging.debug(f"Error finding existing record by keys: {e}")
-        return None
-
-
-def update_lookup_map_with_new_record(
-    lookup_map: Dict, record: Dict, record_id: str, key_fields: List
-) -> None:
-    """
-    Update the lookup map with a newly created record to enable upserts within the same batch.
-
-    Args:
-        lookup_map: Lookup map to update
-        record: Record dict
-        record_id: Record ID to associate
-        key_fields: List of key field names
-    """
-    try:
-        key_values = []
-        for key_field in key_fields:
-            value = record.get(key_field)
-            if value is not None and value != "":
-                key_values.append(str(value).strip())
-            else:
-                return  # Can't index record without all key fields
-
-        key_tuple = tuple(key_values)
-        lookup_map[key_tuple] = record_id
-    except Exception as e:
-        logging.debug(f"Error updating lookup map: {e}")
-
-
-def fetch_field_mapping(
-    table: Table, input_df: pd.DataFrame = None, column_configs: List = None
-):
+def fetch_field_mapping(column_configs: List):
     """
     Fetch field mapping and computed fields from the Airtable table.
 
     Args:
-        table: Airtable table object
-        input_df: Optional input DataFrame (used if table schema is unavailable)
         column_configs: List of ColumnConfig objects for custom mapping
     Returns:
-        Tuple of (field mapping dict, list of computed fields)
+        field mapping dict
     """
-    # If custom column mapping is provided, use it
-    if column_configs:
-        mapping = {}
-        for col_config in column_configs:
-            mapping[col_config.source_name] = col_config.destination_name
-
-        logging.info(f"🧭 Using custom field mapping: {mapping}")
-        return mapping
-
-    # Fallback to automatic mapping
-    try:
-        # Use table schema to get field information directly from metadata
-        table_schema = table.schema()
-        airtable_fields = [field.name for field in table_schema.fields]
-        logging.info(f"📋 Columns available in table '{table.name}': {airtable_fields}")
-    except Exception as e:
-        # Fallback to input data for newly created tables or schema access issues
-        logging.info(
-            f"📋 Could not access table schema: {e}. Building field mapping from input data."
-        )
-        if input_df is not None:
-            # For newly created tables, the field names should match the DataFrame columns
-            # (excluding recordId which is handled by Airtable)
-            airtable_fields = [col for col in input_df.columns if col != "recordId"]
-            logging.info(f"📋 Using input columns as field names: {airtable_fields}")
-        else:
-            logging.warning(
-                "⚠️ No input data provided and cannot access table schema. Cannot build field mapping."
-            )
-            return {}, []
+    if not column_configs:
+        raise UserException("Column configuration is required for field mapping.")
 
     # Hardcoded list of computed (non-editable) fields
     computed_fields = ["Total billed"]
-    logging.info(
-        f"⏭️ Computed fields (will be skipped if present in input): {computed_fields}"
-    )
-
-    # Use direct 1:1 mapping: field name to itself, skip computed fields
     mapping = {
-        field: field for field in airtable_fields if field not in computed_fields
+        col_config.source_name: col_config.destination_name
+        for col_config in column_configs
+        if col_config.destination_name not in computed_fields
     }
-
-    logging.info(f"🧭 Field mapping will be used: {mapping}")
-    return mapping, computed_fields
+    return mapping
 
 
 def clear_table_for_full_load(table: Table):
@@ -540,7 +368,7 @@ def get_primary_key_fields(column_configs: List) -> List[str]:
     return pk_fields
 
 
-def validate_connection(api_token: str, base_id: str, table_name: str) -> Table:
+def validate_connection(api_token: str, base_id: str, table_name: str) -> None:
     """
     Connect to Airtable using the API token and check access to the base and table.
 
@@ -548,24 +376,18 @@ def validate_connection(api_token: str, base_id: str, table_name: str) -> Table:
         api_token: Airtable API token
         base_id: Airtable base ID
         table_name: Table name
-    Returns:
-        Table object if connection is successful
     """
+
+    logging.info(f"Connecting to Airtable base '{base_id}', table '{table_name}'.")
     try:
         api = Api(api_token)
         base = api.base(base_id)
         table = base.table(table_name)
 
-        # Fetch 1 test record to validate connection
-        table.all(max_records=1)
-        logging.info("✅ Successfully connected to Airtable.")
-
-        return table
-    except Exception:
-        logging.error(
-            "❌ Failed to validate Airtable credentials or access.", exc_info=True
-        )
-        raise
+        table.schema()
+    except Exception as e:
+        raise UserException(f"Failed to connect to Airtable: {e}")
+    logging.info(f"Successfully connected to table '{table_name}' in base '{base_id}'")
 
 
 # ============================================================================
@@ -598,11 +420,7 @@ def get_or_create_table(
 
     # Try to get existing table
     try:
-        table = base.table(table_name)
-        # Test access to the table
-        table.all(max_records=1)
-        logging.info(f"✅ Found existing table '{table_name}'")
-        return table
+        return base.table(table_name)
     except Exception as e:
         logging.info(
             f"📋 Table '{table_name}' not found or inaccessible. Will create new table."

@@ -4,32 +4,21 @@
   "required": [
     "base_id",
     "table_name",
+    "load_type",
     "destination"
   ],
   "properties": {
     "base_id": {
       "type": "string",
       "title": "Base ID",
-      "description": "The ID of the Airtable base where the table will be created.",
+      "description": "The ID of the Airtable base where the table is located.",
       "propertyOrder": 1
     },
     "table_name": {
       "type": "string",
       "title": "Table Name",
-      "description": "The name of the table to be created in the specified base.",
+      "description": "The name of the table to be created/updated in the specified base.",
       "propertyOrder": 2
-    },
-    "load_type": {
-        "enum": [
-        "full_load",
-        "incremental_load", 
-        "append"
-        ],
-        "type": "string",
-        "title": "Load Type",
-        "default": "append",
-        "description": "full_load: Delete all rows and reload from scratch. incremental_load: Update existing records using primary keys. append: Add new records without checking for duplicates.",
-        "propertyOrder": 3
     },
     "destination": {
       "type": "object",
@@ -39,6 +28,18 @@
       ],
       "propertyOrder": 4,
       "properties": {
+        "load_type": {
+          "enum": [
+            "full_load",
+            "incremental_load",
+            "append"
+          ],
+          "type": "string",
+          "title": "Load Type",
+          "default": "append",
+          "description": "full_load: Delete all rows and reload from scratch. incremental_load: Update existing records using primary keys. append: Add new records without checking for duplicates.",
+          "propertyOrder": 1
+        },
         "columns": {
           "type": "array",
           "items": {
