@@ -10,10 +10,15 @@
       "format": "password",
       "title": "API Token",
       "description": "Valid PAT token. Should have data.records:write. Optionally schema.bases:write if adding or editing new tables via component.",
-      "propertyOrder": 1,
+      "propertyOrder": 1
+    },
+    "test_connection": {
+      "type": "button",
+      "format": "sync-action",
+      "propertyOrder": 2,
       "options": {
         "async": {
-          "label": "Test connection",
+          "label": "TEST CONNECTION",
           "action": "test_connection"
         }
       }

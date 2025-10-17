@@ -12,11 +12,17 @@
       "propertyOrder": 1,
       "options": {
         "tags": true,
-        "creatable": true,
+        "creatable": true
+      }
+    },
+    "load_bases": {
+      "type": "button",
+      "format": "sync-action",
+      "propertyOrder": 2,
+      "options": {
         "async": {
-          "label": "Load bases",
-          "action": "list_bases",
-          "autoload": []
+          "label": "LOAD BASES",
+          "action": "list_bases"
         }
       }
     },
@@ -24,7 +30,7 @@
       "type": "object",
       "title": "Destination",
       "required": ["table_name", "columns", "load_type"],
-      "propertyOrder": 2,
+      "propertyOrder": 3,
       "properties": {
         "table_name": {
           "type": "string",
@@ -35,11 +41,17 @@
           "propertyOrder": 1,
           "options": {
             "tags": true,
-            "creatable": true,
+            "creatable": true
+          }
+        },
+        "load_tables": {
+          "type": "button",
+          "format": "sync-action",
+          "propertyOrder": 2,
+          "options": {
             "async": {
-              "label": "Load tables",
-              "action": "list_tables",
-              "autoload": ["base_id"]
+              "label": "LOAD TABLES",
+              "action": "list_tables"
             }
           }
         },
@@ -49,7 +61,7 @@
           "title": "Load Type",
           "default": "Append",
           "description": "Full Load: Delete all rows and reload from scratch;\nIncremental Load: Update existing records using primary keys;\nAppend: Add new records without checking for duplicates.",
-          "propertyOrder": 2
+          "propertyOrder": 3
         },
         "columns": {
           "type": "array",
@@ -107,7 +119,7 @@
           },
           "title": "Columns",
           "format": "table",
-          "propertyOrder": 3
+          "propertyOrder": 4
         }
       }
     }
