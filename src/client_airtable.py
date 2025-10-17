@@ -4,32 +4,8 @@ import pandas as pd
 from pyairtable import Api, Table, Base
 from typing import Dict, List
 from keboola.component.exceptions import UserException
-
-
-def validate_field_mapping(input_columns: List[str], field_mapping: Dict) -> List[str]:
-    """
-    Validate field mapping and return list of mappable columns.
-
-    Args:
-        input_columns: List of input column names
-        field_mapping: Mapping from input column names to Airtable field names
-
-    Returns:
-        List of column names that can be mapped (includes recordId if present)
-    """
-    unmapped_columns = []
-    mappable_columns = []
-
-    for col in input_columns:
-        if col == "recordId" or col in field_mapping:
-            mappable_columns.append(col)
-        else:
-            unmapped_columns.append(col)
-
-    if unmapped_columns:
-        logging.debug(f"🔍 Columns not mapped and will be skipped: {unmapped_columns}")
-
-    return mappable_columns
+from client_storage import SAPIClient
+from configuration import ColumnConfig
 
 
 def map_records(records: List, field_mapping: Dict) -> List:
@@ -298,26 +274,22 @@ def process_upsert_batches(
     }
 
 
-def fetch_field_mapping(column_configs: List):
+def build_field_mapping(column_configs: List) -> Dict[str, str]:
     """
-    Fetch field mapping and computed fields from the Airtable table.
-
+    Build field mapping from column configurations.
     Args:
-        column_configs: List of ColumnConfig objects for custom mapping
+        column_configs: List of ColumnConfig objects
     Returns:
-        field mapping dict
+        Dict mapping source names to destination names
     """
     if not column_configs:
-        raise UserException("Column configuration is required for field mapping.")
-
-    # Hardcoded list of computed (non-editable) fields
+        raise UserException("Column configuration is required.")
     computed_fields = ["Total billed"]
-    mapping = {
-        col_config.source_name: col_config.destination_name
-        for col_config in column_configs
-        if col_config.destination_name not in computed_fields
+    return {
+        col.source_name: col.destination_name
+        for col in column_configs
+        if col.destination_name not in computed_fields
     }
-    return mapping
 
 
 def clear_table_for_full_load(table: Table):
@@ -368,19 +340,18 @@ def get_primary_key_fields(column_configs: List) -> List[str]:
     return pk_fields
 
 
-def validate_connection(api_token: str, base_id: str) -> None:
+def validate_connection(api: Api, base_id: str) -> None:
     """
-    Connect to Airtable using the API token and check access to the base.
+    Connect to Airtable using the API instance and check access to the base.
     Does not validate table existence since tables may be created dynamically.
 
     Args:
-        api_token: Airtable API token
+        api: Airtable API instance
         base_id: Airtable base ID
     """
 
     logging.info(f"Validating connection to Airtable base '{base_id}'")
     try:
-        api = Api(api_token)
         base = api.base(base_id)
         # Just check that we can access the base - don't check for specific table
         # since we support table creation
@@ -396,7 +367,7 @@ def validate_connection(api_token: str, base_id: str) -> None:
 
 
 def get_or_create_table(
-    api_token: str,
+    api: Api,
     base_id: str,
     table_name: str,
     input_df: pd.DataFrame,
@@ -407,7 +378,7 @@ def get_or_create_table(
     If creating, use the input DataFrame to infer the table schema.
 
     Args:
-        api_token: Airtable API token
+        api: Airtable API instance
         base_id: Airtable base ID
         table_name: Table name
         input_df: Input DataFrame to infer schema if table needs to be created
@@ -415,7 +386,6 @@ def get_or_create_table(
     Returns:
         Table object
     """
-    api = Api(api_token)
     base = api.base(base_id)
 
     # Try to get existing table
@@ -650,3 +620,74 @@ def _append_log_row(log_rows, record_id, status):
             "status": status,
         }
     )
+
+
+def map_to_airtable_type(keboola_type: str) -> str:
+    """
+    Maps Keboola data types to Airtable field types.
+
+    Args:
+        keboola_type: The Keboola data type
+
+    Returns:
+        str: Corresponding Airtable field type
+    """
+    type_mapping = {
+        "STRING": "singleLineText",
+        "INTEGER": "number",
+        "NUMERIC": "number",
+        "FLOAT": "number",
+        "BOOLEAN": "checkbox",
+        "DATE": "date",
+        "TIMESTAMP": "dateTime",
+    }
+    return type_mapping.get(keboola_type, "singleLineText")
+
+
+def get_sapi_column_definition(table_id: str, storage_url: str, storage_token: str):
+    """
+    Get column definitions from Storage API table metadata.
+
+    Args:
+        table_id: Storage table ID
+        storage_url: Storage API URL
+        storage_token: Storage API token
+
+    Returns:
+        List of column configuration dicts with Keboola data types
+    """
+    storage_client = SAPIClient(storage_url, storage_token)
+    table_detail = storage_client.get_table_detail(table_id)
+    columns = []
+
+    if table_detail.get("isTyped") and table_detail.get("definition"):
+        primary_keys = set(table_detail["definition"].get("primaryKeysNames", []))
+        columns_to_process = [
+            {
+                "name": column["name"],
+                "dtype": column["definition"].get("type", "STRING"),
+            }
+            for column in table_detail["definition"]["columns"]
+        ]
+    else:  # non-typed table
+        primary_keys = set(table_detail.get("primaryKey", []))
+        columns_to_process = [
+            {
+                "name": col_name,
+                "dtype": "STRING",
+            }
+            for col_name in table_detail.get("columns", [])
+        ]
+
+    # Create column configs for all columns
+    for col_info in columns_to_process:
+        col_name = col_info["name"]
+        columns.append(
+            ColumnConfig(
+                source_name=col_name,
+                destination_name=col_name,
+                dtype=col_info["dtype"],
+                pk=col_name in primary_keys,
+            ).model_dump()
+        )
+    return columns

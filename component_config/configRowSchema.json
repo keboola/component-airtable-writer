@@ -1,47 +1,79 @@
 {
   "type": "object",
   "title": "Table configuration",
-  "required": ["base_id", "table_name", "destination"],
+  "required": [
+    "base_id",
+    "destination"
+  ],
   "properties": {
     "base_id": {
+      "enum": [],
       "type": "string",
       "title": "Base ID",
+      "format": "select",
+      "options": {
+        "async": {
+          "label": "LOAD BASES",
+          "action": "list_bases",
+          "autoload": []
+        }
+      },
       "description": "The ID of the Airtable base where the table is located.",
       "propertyOrder": 1
-    },
-    "table_name": {
-      "type": "string",
-      "title": "Table Name",
-      "description": "The name of the table to be created/updated in the specified base.",
-      "propertyOrder": 2
     },
     "destination": {
       "type": "object",
       "title": "Destination",
-      "required": ["columns", "load_type"],
-      "propertyOrder": 4,
+      "required": [
+        "table_name",
+        "columns",
+        "load_type"
+      ],
+      "propertyOrder": 2,
       "properties": {
+        "table_name": {
+          "enum": [],
+          "type": "string",
+          "title": "Table Name or Table ID",
+          "format": "select",
+          "description": "The name/id of the table to be created/updated in the specified base.",
+          "propertyOrder": 1,
+          "options": {
+            "creatable": true,
+            "async": {
+              "label": "LOAD TABLES",
+              "action": "list_tables",
+              "autoload": [
+                "parameters.base_id"
+              ]
+            }
+          }
+        },
         "load_type": {
-          "enum": ["Full Load", "Incremental Load", "Append"],
+          "enum": [
+            "Append",
+            "Full Load",
+            "Incremental Load"
+          ],
           "type": "string",
           "title": "Load Type",
           "default": "Append",
-          "description": "Full Load: Delete all rows and reload from scratch;\nIncremental Load: Update existing records using primary keys;\nAppend: Add new records without checking for duplicates.",
-          "propertyOrder": 1
+          "description": "Full Load: Delete all rows and reload from scratch; Incremental Load: Update existing records using primary keys; Append: Add new records without checking for duplicates.",
+          "propertyOrder": 2
         },
         "columns": {
           "type": "array",
           "items": {
             "type": "object",
             "title": "Column",
-            "required": ["source_name", "destination_name"],
+            "required": [
+              "source_name",
+              "destination_name"
+            ],
             "properties": {
               "source_name": {
                 "type": "string",
                 "title": "Source Column",
-                "watch": {
-                  "columns": "_metadata_.table.columns"
-                },
                 "enumSource": "columns",
                 "propertyOrder": 1
               },
@@ -59,32 +91,22 @@
               },
               "dtype": {
                 "enum": [
-                  "singleLineText",
-                  "multilineText",
-                  "richText",
-                  "email",
-                  "url",
-                  "phoneNumber",
-                  "number",
-                  "percent",
+                  "barcode",
+                  "checkbox",
                   "currency",
-                  "singleSelect",
-                  "multipleSelects",
                   "date",
                   "dateTime",
-                  "checkbox",
+                  "email",
+                  "multilineText",
+                  "multipleSelects",
+                  "number",
+                  "percent",
+                  "phoneNumber",
                   "rating",
-                  "barcode",
-                  "attachment",
-                  "formula",
-                  "rollup",
-                  "count",
-                  "lookup",
-                  "createdTime",
-                  "lastModifiedTime",
-                  "createdBy",
-                  "lastModifiedBy",
-                  "autoNumber"
+                  "richText",
+                  "singleLineText",
+                  "singleSelect",
+                  "url"
                 ],
                 "type": "string",
                 "title": "Airtable Field Type",
@@ -95,7 +117,19 @@
           },
           "title": "Columns",
           "format": "table",
-          "propertyOrder": 2
+          "propertyOrder": 3
+        },
+        "load_columns_button":{
+          "type":"button",
+          "format":"sync-action",
+          "propertyOrder":4,
+          "options": {
+            "async": {
+              "cache":false,
+              "label": "LOAD COLUMNS",
+              "action": "return_columns_data"
+            }
+          }
         }
       }
     },
@@ -103,25 +137,6 @@
       "type": "object",
       "options": {
         "hidden": true
-      },
-      "properties": {
-        "table": {
-          "type": "object",
-          "properties": {
-            "id": {
-              "type": "string"
-            },
-            "name": {
-              "type": "string"
-            },
-            "columns": {
-              "type": "array"
-            },
-            "primaryKey": {
-              "type": "array"
-            }
-          }
-        }
       }
     }
   }
