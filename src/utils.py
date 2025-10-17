@@ -368,26 +368,26 @@ def get_primary_key_fields(column_configs: List) -> List[str]:
     return pk_fields
 
 
-def validate_connection(api_token: str, base_id: str, table_name: str) -> None:
+def validate_connection(api_token: str, base_id: str) -> None:
     """
-    Connect to Airtable using the API token and check access to the base and table.
+    Connect to Airtable using the API token and check access to the base.
+    Does not validate table existence since tables may be created dynamically.
 
     Args:
         api_token: Airtable API token
         base_id: Airtable base ID
-        table_name: Table name
     """
 
-    logging.info(f"Connecting to Airtable base '{base_id}', table '{table_name}'.")
+    logging.info(f"Validating connection to Airtable base '{base_id}'")
     try:
         api = Api(api_token)
         base = api.base(base_id)
-        table = base.table(table_name)
-
-        table.schema()
+        # Just check that we can access the base - don't check for specific table
+        # since we support table creation
+        _ = base.schema()
     except Exception as e:
-        raise UserException(f"Failed to connect to Airtable: {e}")
-    logging.info(f"Successfully connected to table '{table_name}' in base '{base_id}'")
+        raise UserException(f"Failed to connect to Airtable base '{base_id}': {e}")
+    logging.info(f"✅ Successfully connected to Airtable base '{base_id}'")
 
 
 # ============================================================================

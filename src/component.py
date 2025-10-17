@@ -30,7 +30,7 @@ class Component(ComponentBase):
         logging.info(f"Loaded input data: {len(df)} rows")
 
         try:
-            validate_connection(params.api_token, params.base_id, params.table_name)
+            validate_connection(params.api_token, params.base_id)
 
             table = get_or_create_table(
                 params.api_token,
