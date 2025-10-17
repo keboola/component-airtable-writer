@@ -1,33 +1,55 @@
 {
   "type": "object",
   "title": "Table configuration",
-  "required": ["base_id", "table_name", "destination"],
+  "required": ["base_id", "destination"],
   "properties": {
     "base_id": {
       "type": "string",
+      "enum": [],
       "title": "Base ID",
+      "format": "select",
       "description": "The ID of the Airtable base where the table is located.",
-      "propertyOrder": 1
-    },
-    "table_name": {
-      "type": "string",
-      "title": "Table Name",
-      "description": "The name of the table to be created/updated in the specified base.",
-      "propertyOrder": 2
+      "propertyOrder": 1,
+      "options": {
+        "tags": true,
+        "creatable": true,
+        "async": {
+          "label": "Load bases",
+          "action": "list_bases",
+          "autoload": []
+        }
+      }
     },
     "destination": {
       "type": "object",
       "title": "Destination",
-      "required": ["columns", "load_type"],
-      "propertyOrder": 4,
+      "required": ["table_name", "columns", "load_type"],
+      "propertyOrder": 2,
       "properties": {
+        "table_name": {
+          "type": "string",
+          "enum": [],
+          "title": "Table Name",
+          "format": "select",
+          "description": "The name of the table to be created/updated in the specified base.",
+          "propertyOrder": 1,
+          "options": {
+            "tags": true,
+            "creatable": true,
+            "async": {
+              "label": "Load tables",
+              "action": "list_tables",
+              "autoload": ["base_id"]
+            }
+          }
+        },
         "load_type": {
-          "enum": ["Full Load", "Incremental Load", "Append"],
+          "enum": ["Append", "Full Load", "Incremental Load"],
           "type": "string",
           "title": "Load Type",
           "default": "Append",
           "description": "Full Load: Delete all rows and reload from scratch;\nIncremental Load: Update existing records using primary keys;\nAppend: Add new records without checking for duplicates.",
-          "propertyOrder": 1
+          "propertyOrder": 2
         },
         "columns": {
           "type": "array",
@@ -59,32 +81,22 @@
               },
               "dtype": {
                 "enum": [
-                  "singleLineText",
-                  "multilineText",
-                  "richText",
-                  "email",
-                  "url",
-                  "phoneNumber",
-                  "number",
-                  "percent",
+                  "barcode",
+                  "checkbox",
                   "currency",
-                  "singleSelect",
-                  "multipleSelects",
                   "date",
                   "dateTime",
-                  "checkbox",
+                  "email",
+                  "multilineText",
+                  "multipleSelects",
+                  "number",
+                  "percent",
+                  "phoneNumber",
                   "rating",
-                  "barcode",
-                  "attachment",
-                  "formula",
-                  "rollup",
-                  "count",
-                  "lookup",
-                  "createdTime",
-                  "lastModifiedTime",
-                  "createdBy",
-                  "lastModifiedBy",
-                  "autoNumber"
+                  "richText",
+                  "singleLineText",
+                  "singleSelect",
+                  "url"
                 ],
                 "type": "string",
                 "title": "Airtable Field Type",
@@ -95,31 +107,31 @@
           },
           "title": "Columns",
           "format": "table",
-          "propertyOrder": 2
+          "propertyOrder": 3
         }
       }
+    }
+  },
+  "_metadata_": {
+    "type": "object",
+    "options": {
+      "hidden": true
     },
-    "_metadata_": {
-      "type": "object",
-      "options": {
-        "hidden": true
-      },
-      "properties": {
-        "table": {
-          "type": "object",
-          "properties": {
-            "id": {
-              "type": "string"
-            },
-            "name": {
-              "type": "string"
-            },
-            "columns": {
-              "type": "array"
-            },
-            "primaryKey": {
-              "type": "array"
-            }
+    "properties": {
+      "table": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "columns": {
+            "type": "array"
+          },
+          "primaryKey": {
+            "type": "array"
           }
         }
       }

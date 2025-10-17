@@ -1,9 +1,9 @@
 import logging
-from keboola.component.base import ComponentBase
+from keboola.component.base import ComponentBase, sync_action
 from keboola.component.exceptions import UserException
 from configuration import Configuration
-from utils import (
-    fetch_field_mapping,
+from client_airtable import (
+    build_field_mapping,
     map_records,
     get_or_create_table,
     get_table_schema,
@@ -11,7 +11,6 @@ from utils import (
     process_records_batch,
     clear_table_for_full_load,
     get_primary_key_fields,
-    validate_field_mapping,
     validate_connection,
 )
 import pandas as pd
@@ -40,13 +39,11 @@ class Component(ComponentBase):
                 params.destination.columns,
             )
 
-            # Get field mapping for the table
-            field_mapping = fetch_field_mapping(params.destination.columns)
+            # Build field mapping for the table
+            field_mapping = build_field_mapping(params.destination.columns)
 
-            # Validate field mapping and get mappable columns
-            mappable_columns = validate_field_mapping(list(df.columns), field_mapping)
-
-            # Filter DataFrame to only include mappable columns
+            # Only use columns present in the mapping
+            mappable_columns = [col for col in df.columns if col in field_mapping]
             filtered_df = df[mappable_columns]
             logging.info(
                 f"📊 Processing {len(mappable_columns)} columns: {mappable_columns}"
@@ -92,6 +89,45 @@ class Component(ComponentBase):
         except Exception as e:
             raise UserException(f"Failed to process data: {str(e)}")
 
+
+# --- Keboola Sync Actions ---
+
+@sync_action("test_connection")
+def action_testConnection(self):
+    """Test Airtable API token by listing bases"""
+    if not self.params.api_token:
+        raise UserException("API token must be set to test the connection.")
+    try:
+        api = __import__('pyairtable').pyairtable.Api(self.params.api_token)
+        bases = api.bases()
+        return {"status": "success", "message": "Connection successful."}
+    except Exception as e:
+        raise UserException(f"Failed to connect to Airtable: {e}")
+
+
+
+@sync_action("list_bases")
+def action_list_bases(self):
+    """List all accessible Airtable bases for dropdown."""
+    if not self.params.api_token:
+        raise UserException("API token must be set to list bases.")
+    api = __import__('pyairtable').pyairtable.Api(self.params.api_token)
+    bases = api.bases()
+    return [{"value": b['id'], "label": b['name']} for b in bases]
+
+
+
+@sync_action("list_tables")
+def action_list_tables(self):
+    """List all tables in the selected base for dropdown."""
+    if not self.params.api_token:
+        raise UserException("API token must be set to list tables.")
+    if not self.params.base_id:
+        raise UserException("Base ID must be set to list tables.")
+    api = __import__('pyairtable').pyairtable.Api(self.params.api_token)
+    base = api.base(self.params.base_id)
+    schema = base.schema()
+    return [{"value": t['name'], "label": t['name']} for t in schema['tables']]
 
 """
         Main entrypoint

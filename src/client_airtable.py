@@ -6,30 +6,6 @@ from typing import Dict, List
 from keboola.component.exceptions import UserException
 
 
-def validate_field_mapping(input_columns: List[str], field_mapping: Dict) -> List[str]:
-    """
-    Validate field mapping and return list of mappable columns.
-
-    Args:
-        input_columns: List of input column names
-        field_mapping: Mapping from input column names to Airtable field names
-
-    Returns:
-        List of column names that can be mapped (includes recordId if present)
-    """
-    unmapped_columns = []
-    mappable_columns = []
-
-    for col in input_columns:
-        if col == "recordId" or col in field_mapping:
-            mappable_columns.append(col)
-        else:
-            unmapped_columns.append(col)
-
-    if unmapped_columns:
-        logging.debug(f"🔍 Columns not mapped and will be skipped: {unmapped_columns}")
-
-    return mappable_columns
 
 
 def map_records(records: List, field_mapping: Dict) -> List:
@@ -298,26 +274,22 @@ def process_upsert_batches(
     }
 
 
-def fetch_field_mapping(column_configs: List):
+def build_field_mapping(column_configs: List) -> Dict[str, str]:
     """
-    Fetch field mapping and computed fields from the Airtable table.
-
+    Build field mapping from column configurations.
     Args:
-        column_configs: List of ColumnConfig objects for custom mapping
+        column_configs: List of ColumnConfig objects
     Returns:
-        field mapping dict
+        Dict mapping source names to destination names
     """
     if not column_configs:
-        raise UserException("Column configuration is required for field mapping.")
-
-    # Hardcoded list of computed (non-editable) fields
+        raise UserException("Column configuration is required.")
     computed_fields = ["Total billed"]
-    mapping = {
-        col_config.source_name: col_config.destination_name
-        for col_config in column_configs
-        if col_config.destination_name not in computed_fields
+    return {
+        col.source_name: col.destination_name
+        for col in column_configs
+        if col.destination_name not in computed_fields
     }
-    return mapping
 
 
 def clear_table_for_full_load(table: Table):
