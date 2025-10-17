@@ -24,8 +24,8 @@ class Destination(BaseModel):
 
 
 class Configuration(BaseModel):
-    base_id: str = Field(alias="base_id")
-    table_name: str = Field(alias="table_name")
+    base_id: str = Field(alias="base_id", default="")
+    table_name: str = Field(alias="table_name", default="")
     api_token: str = Field(alias="#api_token")
     destination: Destination = Field(default_factory=Destination)
     debug: bool = False
@@ -34,16 +34,4 @@ class Configuration(BaseModel):
     def check_token(self):
         if not self.api_token:
             raise UserException("API token must be entered")
-        return self
-
-    @model_validator(mode="after")
-    def check_table_name(self):
-        if not self.table_name:
-            raise UserException("Table Name must be entered")
-        return self
-
-    @model_validator(mode="after")
-    def check_base_id(self):
-        if not self.base_id:
-            raise UserException("Base ID must be entered")
         return self

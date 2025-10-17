@@ -19,7 +19,7 @@
       "options": {
         "async": {
           "label": "TEST CONNECTION",
-          "action": "test_connection"
+          "action": "testConnection"
         }
       }
     }

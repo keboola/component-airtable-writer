@@ -1,6 +1,7 @@
 import logging
 from keboola.component.base import ComponentBase, sync_action
 from keboola.component.exceptions import UserException
+from keboola.component.sync_actions import SelectElement
 from configuration import Configuration
 from client_airtable import (
     build_field_mapping,
@@ -11,7 +12,8 @@ from client_airtable import (
     process_records_batch,
     clear_table_for_full_load,
     get_primary_key_fields,
-    validate_connection,
+    map_to_airtable_type,
+    get_sapi_column_definition,
 )
 from pyairtable import Api
 import pandas as pd
@@ -33,8 +35,6 @@ class Component(ComponentBase):
         logging.info(f"Loaded input data: {len(df)} rows")
 
         try:
-            validate_connection(self.api, self.params.base_id)
-
             table = get_or_create_table(
                 self.api,
                 self.params.base_id,
@@ -96,41 +96,73 @@ class Component(ComponentBase):
             raise UserException(f"Failed to process data: {str(e)}")
 
 
-# --- Keboola Sync Actions ---
+    # --- Keboola Sync Actions ---
+    @sync_action("testConnection")
+    def testConnection(self):
+        """Test Airtable API token by listing bases"""
+        if not self.params.api_token:
+            raise UserException("API token must be set to test the connection.")
+        try:
+            self.api.bases()
+        except Exception as e:
+            raise UserException(f"Failed to connect to Airtable: {e}")
 
 
-@sync_action("test_connection")
-def action_testConnection(self):
-    """Test Airtable API token by listing bases"""
-    if not self.params.api_token:
-        raise UserException("API token must be set to test the connection.")
-    try:
-        self.api.bases()
-        return {"status": "success", "message": "Connection successful."}
-    except Exception as e:
-        raise UserException(f"Failed to connect to Airtable: {e}")
+    @sync_action("list_bases")
+    def list_bases(self):
+        """List all accessible Airtable bases for dropdown."""
+        if not self.params.api_token:
+            raise UserException("API token must be set to list bases.")
+        bases = self.api.bases()
+        return [SelectElement(b["id"], b["name"]) for b in bases]
 
 
-@sync_action("list_bases")
-def action_list_bases(self):
-    """List all accessible Airtable bases for dropdown."""
-    if not self.params.api_token:
-        raise UserException("API token must be set to list bases.")
-    bases = self.api.bases()
-    return [{"value": b["id"], "label": b["name"]} for b in bases]
+    @sync_action("list_tables")
+    def list_tables(self):
+        """List all tables in the selected base for dropdown."""
+        if not self.params.api_token:
+            raise UserException("API token must be set to list tables.")
+        if not self.params.base_id:
+            raise UserException("Base ID must be set to list tables.")
+        base = self.api.base(self.params.base_id)
+        schema = base.schema()
+        return [SelectElement(t["id"], t["name"]) for t in schema["tables"]]
 
+    @sync_action("return_columns_data")
+    def return_columns_data(self):
+        """Load columns from input mapping and return configuration data."""
+        if self.params.destination.columns:
+            columns = []
+            for col in self.params.destination.columns:
+                col_data = col.model_dump()
+                col_data["dtype"] = map_to_airtable_type(col_data["dtype"])
+                columns.append(col_data)
+        else:
+            if len(self.configuration.tables_input_mapping) != 1:
+                raise UserException(
+                    "Exactly one input table is expected. Found: "
+                    f"{[t.destination for t in self.configuration.tables_input_mapping]}"
+                )
 
-@sync_action("list_tables")
-def action_list_tables(self):
-    """List all tables in the selected base for dropdown."""
-    if not self.params.api_token:
-        raise UserException("API token must be set to list tables.")
-    if not self.params.base_id:
-        raise UserException("Base ID must be set to list tables.")
-    base = self.api.base(self.params.base_id)
-    schema = base.schema()
-    return [{"value": t["name"], "label": t["name"]} for t in schema["tables"]]
+            table_id = self.configuration.tables_input_mapping[0].source
+            columns = get_sapi_column_definition(
+                table_id,
+                self.environment_variables.url,
+                self.environment_variables.token
+            )
 
+        return {
+            "type": "data",
+            "data": {
+                "base_id": self.params.base_id,
+                "destination": {
+                    "table_name": self.params.destination.table or self.params.table_name,
+                    "load_type": self.params.destination.load_type,
+                    "columns": columns,
+                },
+                "debug": self.params.debug,
+            },
+        }
 
 """
         Main entrypoint

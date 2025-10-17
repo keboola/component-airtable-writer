@@ -63,6 +63,17 @@
           "description": "Full Load: Delete all rows and reload from scratch;\nIncremental Load: Update existing records using primary keys;\nAppend: Add new records without checking for duplicates.",
           "propertyOrder": 3
         },
+        "load_columns": {
+          "type": "button",
+          "format": "sync-action",
+          "propertyOrder": 4,
+          "options": {
+            "async": {
+              "label": "LOAD COLUMNS",
+              "action": "return_columns_data"
+            }
+          }
+        },
         "columns": {
           "type": "array",
           "items": {
@@ -119,7 +130,7 @@
           },
           "title": "Columns",
           "format": "table",
-          "propertyOrder": 4
+          "propertyOrder": 5
         }
       }
     }
