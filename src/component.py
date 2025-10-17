@@ -95,7 +95,6 @@ class Component(ComponentBase):
         except Exception as e:
             raise UserException(f"Failed to process data: {str(e)}")
 
-
     # --- Keboola Sync Actions ---
     @sync_action("testConnection")
     def testConnection(self):
@@ -107,7 +106,6 @@ class Component(ComponentBase):
         except Exception as e:
             raise UserException(f"Failed to connect to Airtable: {e}")
 
-
     @sync_action("list_bases")
     def list_bases(self):
         """List all accessible Airtable bases for dropdown."""
@@ -115,7 +113,6 @@ class Component(ComponentBase):
             raise UserException("API token must be set to list bases.")
         bases = self.api.bases()
         return [SelectElement(b["id"], b["name"]) for b in bases]
-
 
     @sync_action("list_tables")
     def list_tables(self):
@@ -148,7 +145,7 @@ class Component(ComponentBase):
             columns = get_sapi_column_definition(
                 table_id,
                 self.environment_variables.url,
-                self.environment_variables.token
+                self.environment_variables.token,
             )
 
         return {
@@ -156,13 +153,15 @@ class Component(ComponentBase):
             "data": {
                 "base_id": self.params.base_id,
                 "destination": {
-                    "table_name": self.params.destination.table or self.params.table_name,
+                    "table_name": self.params.destination.table
+                    or self.params.table_name,
                     "load_type": self.params.destination.load_type,
                     "columns": columns,
                 },
                 "debug": self.params.debug,
             },
         }
+
 
 """
         Main entrypoint

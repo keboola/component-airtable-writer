@@ -622,7 +622,6 @@ def _append_log_row(log_rows, record_id, status):
     )
 
 
-
 def map_to_airtable_type(keboola_type: str) -> str:
     """
     Maps Keboola data types to Airtable field types.
@@ -648,12 +647,12 @@ def map_to_airtable_type(keboola_type: str) -> str:
 def get_sapi_column_definition(table_id: str, storage_url: str, storage_token: str):
     """
     Get column definitions from Storage API table metadata.
-    
+
     Args:
         table_id: Storage table ID
         storage_url: Storage API URL
         storage_token: Storage API token
-        
+
     Returns:
         List of column configuration dicts
     """
