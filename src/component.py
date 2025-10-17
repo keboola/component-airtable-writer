@@ -18,9 +18,8 @@ import pandas as pd
 
 class Component(ComponentBase):
     def __init__(self):
-        super().__init__()  
+        super().__init__()
         self.params = Configuration(**self.configuration.parameters)
-
 
     def run(self):
         # Get input data first
@@ -70,7 +69,9 @@ class Component(ComponentBase):
             upsert_key_fields = None
             # Determine upsert key fields based on load type
             if load_type == "Incremental Load":
-                upsert_key_fields = get_primary_key_fields(self.params.destination.columns)
+                upsert_key_fields = get_primary_key_fields(
+                    self.params.destination.columns
+                )
                 if not upsert_key_fields:
                     raise UserException(
                         "Incremental load requires at least one primary key field to be set in the configuration."
