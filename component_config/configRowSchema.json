@@ -1,12 +1,7 @@
 {
   "type": "object",
   "title": "Table configuration",
-  "required": [
-    "base_id",
-    "table_name",
-    "load_type",
-    "destination"
-  ],
+  "required": ["base_id", "table_name", "destination"],
   "properties": {
     "base_id": {
       "type": "string",
@@ -23,17 +18,11 @@
     "destination": {
       "type": "object",
       "title": "Destination",
-      "required": [
-        "columns"
-      ],
+      "required": ["columns", "load_type"],
       "propertyOrder": 4,
       "properties": {
         "load_type": {
-          "enum": [
-            "full_load",
-            "incremental_load",
-            "append"
-          ],
+          "enum": ["full_load", "incremental_load", "append"],
           "type": "string",
           "title": "Load Type",
           "default": "append",
@@ -45,10 +34,7 @@
           "items": {
             "type": "object",
             "title": "Column",
-            "required": [
-              "source_name",
-              "destination_name"
-            ],
+            "required": ["source_name", "destination_name"],
             "properties": {
               "source_name": {
                 "type": "string",
@@ -116,7 +102,26 @@
     "_metadata_": {
       "type": "object",
       "options": {
-        "hidden": false
+        "hidden": true
+      },
+      "properties": {
+        "table": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "columns": {
+              "type": "array"
+            },
+            "primaryKey": {
+              "type": "array"
+            }
+          }
+        }
       }
     }
   }
