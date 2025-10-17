@@ -17,9 +17,12 @@ import pandas as pd
 
 
 class Component(ComponentBase):
-    def run(self):
-        params = Configuration(**self.configuration.parameters)
+    def __init__(self):
+        super().__init__()  
+        self.params = Configuration(**self.configuration.parameters)
 
+
+    def run(self):
         # Get input data first
         input_tables = self.get_input_tables_definitions()
         if not input_tables:
@@ -29,18 +32,18 @@ class Component(ComponentBase):
         logging.info(f"Loaded input data: {len(df)} rows")
 
         try:
-            validate_connection(params.api_token, params.base_id)
+            validate_connection(self.params.api_token, self.params.base_id)
 
             table = get_or_create_table(
-                params.api_token,
-                params.base_id,
-                params.table_name,
+                self.params.api_token,
+                self.params.base_id,
+                self.params.table_name,
                 df,
-                params.destination.columns,
+                self.params.destination.columns,
             )
 
             # Build field mapping for the table
-            field_mapping = build_field_mapping(params.destination.columns)
+            field_mapping = build_field_mapping(self.params.destination.columns)
 
             # Only use columns present in the mapping
             mappable_columns = [col for col in df.columns if col in field_mapping]
@@ -63,19 +66,19 @@ class Component(ComponentBase):
             records = filtered_df.to_dict(orient="records")
             mapped_records = map_records(records, field_mapping)
 
-            load_type = params.destination.load_type
+            load_type = self.params.destination.load_type
             upsert_key_fields = None
             # Determine upsert key fields based on load type
             if load_type == "Incremental Load":
-                upsert_key_fields = get_primary_key_fields(params.destination.columns)
+                upsert_key_fields = get_primary_key_fields(self.params.destination.columns)
                 if not upsert_key_fields:
                     raise UserException(
                         "Incremental load requires at least one primary key field to be set in the configuration."
                     )
-            elif params.destination.load_type == "Full Load":
+            elif self.params.destination.load_type == "Full Load":
                 clear_table_for_full_load(table)
                 upsert_key_fields = None
-            elif params.destination.load_type == "Append":
+            elif self.params.destination.load_type == "Append":
                 upsert_key_fields = None
 
             # Using new batch processing - always batches even for single records
