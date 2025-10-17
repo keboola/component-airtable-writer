@@ -6,8 +6,6 @@ from typing import Dict, List
 from keboola.component.exceptions import UserException
 
 
-
-
 def map_records(records: List, field_mapping: Dict) -> List:
     """
     Map input records to Airtable field names using the provided field mapping.
