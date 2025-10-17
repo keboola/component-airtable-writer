@@ -338,19 +338,18 @@ def get_primary_key_fields(column_configs: List) -> List[str]:
     return pk_fields
 
 
-def validate_connection(api_token: str, base_id: str) -> None:
+def validate_connection(api: Api, base_id: str) -> None:
     """
-    Connect to Airtable using the API token and check access to the base.
+    Connect to Airtable using the API instance and check access to the base.
     Does not validate table existence since tables may be created dynamically.
 
     Args:
-        api_token: Airtable API token
+        api: Airtable API instance
         base_id: Airtable base ID
     """
 
     logging.info(f"Validating connection to Airtable base '{base_id}'")
     try:
-        api = Api(api_token)
         base = api.base(base_id)
         # Just check that we can access the base - don't check for specific table
         # since we support table creation
@@ -366,7 +365,7 @@ def validate_connection(api_token: str, base_id: str) -> None:
 
 
 def get_or_create_table(
-    api_token: str,
+    api: Api,
     base_id: str,
     table_name: str,
     input_df: pd.DataFrame,
@@ -377,7 +376,7 @@ def get_or_create_table(
     If creating, use the input DataFrame to infer the table schema.
 
     Args:
-        api_token: Airtable API token
+        api: Airtable API instance
         base_id: Airtable base ID
         table_name: Table name
         input_df: Input DataFrame to infer schema if table needs to be created
@@ -385,7 +384,6 @@ def get_or_create_table(
     Returns:
         Table object
     """
-    api = Api(api_token)
     base = api.base(base_id)
 
     # Try to get existing table

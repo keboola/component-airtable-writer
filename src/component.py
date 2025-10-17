@@ -13,6 +13,7 @@ from client_airtable import (
     get_primary_key_fields,
     validate_connection,
 )
+from pyairtable import Api
 import pandas as pd
 
 
@@ -20,6 +21,7 @@ class Component(ComponentBase):
     def __init__(self):
         super().__init__()
         self.params = Configuration(**self.configuration.parameters)
+        self.api = Api(self.params.api_token)
 
     def run(self):
         # Get input data first
@@ -31,10 +33,10 @@ class Component(ComponentBase):
         logging.info(f"Loaded input data: {len(df)} rows")
 
         try:
-            validate_connection(self.params.api_token, self.params.base_id)
+            validate_connection(self.api, self.params.base_id)
 
             table = get_or_create_table(
-                self.params.api_token,
+                self.api,
                 self.params.base_id,
                 self.params.table_name,
                 df,
@@ -103,8 +105,7 @@ def action_testConnection(self):
     if not self.params.api_token:
         raise UserException("API token must be set to test the connection.")
     try:
-        api = __import__("pyairtable").pyairtable.Api(self.params.api_token)
-        api.bases()
+        self.api.bases()
         return {"status": "success", "message": "Connection successful."}
     except Exception as e:
         raise UserException(f"Failed to connect to Airtable: {e}")
@@ -115,8 +116,7 @@ def action_list_bases(self):
     """List all accessible Airtable bases for dropdown."""
     if not self.params.api_token:
         raise UserException("API token must be set to list bases.")
-    api = __import__("pyairtable").pyairtable.Api(self.params.api_token)
-    bases = api.bases()
+    bases = self.api.bases()
     return [{"value": b["id"], "label": b["name"]} for b in bases]
 
 
@@ -127,8 +127,7 @@ def action_list_tables(self):
         raise UserException("API token must be set to list tables.")
     if not self.params.base_id:
         raise UserException("Base ID must be set to list tables.")
-    api = __import__("pyairtable").pyairtable.Api(self.params.api_token)
-    base = api.base(self.params.base_id)
+    base = self.api.base(self.params.base_id)
     schema = base.schema()
     return [{"value": t["name"], "label": t["name"]} for t in schema["tables"]]
 
