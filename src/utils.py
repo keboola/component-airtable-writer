@@ -91,8 +91,8 @@ def process_records_batch(
     Args:
         table: Airtable table object
         mapped_records: List of (record_id, record_data) tuples
-        load_type: One of 'full_load', 'incremental_load', 'append'
-        upsert_key_fields: Fields to use for upsert matching (for incremental_load)
+        load_type: One of 'Full Load', 'Incremental Load', 'Append'
+        upsert_key_fields: Fields to use for upsert matching (for Incremental Load)
         batch_size: Maximum records per batch (Airtable limit is 10)
     """
     log_rows = []
@@ -104,7 +104,7 @@ def process_records_batch(
     # For all load types, ignore record_id (Keboola does not persist them)
     records = [record_data for _, record_data in mapped_records]
 
-    if load_type == "full_load":
+    if load_type == "Full Load":
         # Table should already be cleared before this is called
         logging.info(f"Processing {len(records)} records as creates (full load)")
         create_results = process_create_batches(table, records, batch_size)
@@ -113,9 +113,9 @@ def process_records_batch(
         total_errors += create_results["error_count"]
         total_processed += len(records)
 
-    elif load_type == "incremental_load":
+    elif load_type == "Incremental Load":
         logging.info(
-            f"Processing {len(records)} records as upserts (incremental load) using keys: {upsert_key_fields}"
+            f"Processing {len(records)} records as upserts (Incremental Load) using keys: {upsert_key_fields}"
         )
         upsert_results = process_upsert_batches(
             table, records, upsert_key_fields, batch_size
@@ -126,8 +126,8 @@ def process_records_batch(
         total_errors += upsert_results["error_count"]
         total_processed += len(records)
 
-    elif load_type == "append":
-        logging.info(f"Processing {len(records)} records as creates (append mode)")
+    elif load_type == "Append":
+        logging.info(f"Processing {len(records)} records as creates (Append mode)")
         create_results = process_create_batches(table, records, batch_size)
         log_rows.extend(create_results["log_rows"])
         total_created += create_results["created_count"]

@@ -22,11 +22,11 @@
       "propertyOrder": 4,
       "properties": {
         "load_type": {
-          "enum": ["full_load", "incremental_load", "append"],
+          "enum": ["Full Load", "Incremental Load", "Append"],
           "type": "string",
           "title": "Load Type",
-          "default": "append",
-          "description": "full_load: Delete all rows and reload from scratch. incremental_load: Update existing records using primary keys. append: Add new records without checking for duplicates.",
+          "default": "Append",
+          "description": "Full Load: Delete all rows and reload from scratch;\nIncremental Load: Update existing records using primary keys;\nAppend: Add new records without checking for duplicates.",
           "propertyOrder": 1
         },
         "columns": {

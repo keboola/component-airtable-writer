@@ -69,16 +69,16 @@ class Component(ComponentBase):
             load_type = params.destination.load_type
             upsert_key_fields = None
             # Determine upsert key fields based on load type
-            if load_type == "incremental_load":
+            if load_type == "Incremental Load":
                 upsert_key_fields = get_primary_key_fields(params.destination.columns)
                 if not upsert_key_fields:
                     raise UserException(
                         "Incremental load requires at least one primary key field to be set in the configuration."
                     )
-            elif params.destination.load_type == "full_load":
+            elif params.destination.load_type == "Full Load":
                 clear_table_for_full_load(table)
                 upsert_key_fields = None
-            elif params.destination.load_type == "append":
+            elif params.destination.load_type == "Append":
                 upsert_key_fields = None
 
             # Using new batch processing - always batches even for single records

@@ -5,9 +5,9 @@ from pydantic import BaseModel, Field, model_validator
 
 
 class LoadType(str, Enum):
-    full_load = "full_load"
-    incremental_load = "incremental_load"
-    append = "append"
+    full_load = "Full Load"
+    incremental_load = "Incremental Load"
+    append = "Append"
 
 
 class ColumnConfig(BaseModel):
