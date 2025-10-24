@@ -127,10 +127,7 @@
             "async": {
               "cache":false,
               "label": "LOAD COLUMNS",
-              "action": "return_columns_data",
-              "autoload": [
-                "parameters.destination.table_name"
-              ]
+              "action": "return_columns_data"
             }
           }
         }
