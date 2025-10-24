@@ -161,7 +161,7 @@ class Component(ComponentBase):
                     "table_name": self.params.destination.table_name,
                     "load_type": self.params.destination.load_type,
                     "columns": columns,
-                }
+                },
             },
         }
 
