@@ -18,14 +18,13 @@ class ColumnConfig(BaseModel):
 
 
 class Destination(BaseModel):
-    table: Optional[str] = None
+    table_name: Optional[str] = Field(alias="table_name", default="")
     columns: list[ColumnConfig] = Field(default_factory=list)
     load_type: LoadType = Field(default=LoadType.append)
 
 
 class Configuration(BaseModel):
     base_id: str = Field(alias="base_id", default="")
-    table_name: str = Field(alias="table_name", default="")
     api_token: str = Field(alias="#api_token")
     destination: Destination = Field(default_factory=Destination)
     debug: bool = False

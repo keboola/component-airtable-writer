@@ -125,39 +125,37 @@ class Component(ComponentBase):
         if not self.params.base_id:
             raise UserException("Base ID must be set to list tables.")
         base = self.api.base(self.params.base_id)
-        schema = base.schema()
-        return [SelectElement(t.id, t.name) for t in schema.tables]
+        return [SelectElement(t.id, t.name) for t in base.schema().tables]
 
     @sync_action("return_columns_data")
     def return_columns_data(self):
         """Load columns from input mapping and return configuration data."""
-        if self.params.destination.columns:
-            columns = []
-            for col in self.params.destination.columns:
-                col_data = col.model_dump()
-                col_data["dtype"] = map_to_airtable_type(col_data["dtype"])
-                columns.append(col_data)
-        else:
-            if len(self.configuration.tables_input_mapping) != 1:
-                raise UserException(
-                    "Exactly one input table is expected. Found: "
-                    f"{[t.destination for t in self.configuration.tables_input_mapping]}"
-                )
-
-            table_id = self.configuration.tables_input_mapping[0].source
-            columns = get_sapi_column_definition(
-                table_id,
-                self.environment_variables.url,
-                self.environment_variables.token,
+        # 1. Get input table mapping (raise error if not configured)
+        if not self.configuration.tables_input_mapping or len(self.configuration.tables_input_mapping) != 1:
+            raise UserException(
+                "Exactly one input table must be mapped in the configuration. "
+                "Please add an input table mapping in the UI or configuration."
             )
-
+        
+        # 2. Get table definition from Keboola Storage API
+        table_id = self.configuration.tables_input_mapping[0].source
+        columns = get_sapi_column_definition(
+            table_id,
+            self.environment_variables.url,
+            self.environment_variables.token,
+        )
+        
+        # 3. Map Keboola data types to Airtable field types
+        for col in columns:
+            col["dtype"] = map_to_airtable_type(col["dtype"])
+        
+        # 4. Return configuration data
         return {
             "type": "data",
             "data": {
                 "base_id": self.params.base_id,
                 "destination": {
-                    "table_name": self.params.destination.table
-                    or self.params.table_name,
+                    "table_name": self.params.destination.table_name,
                     "load_type": self.params.destination.load_type,
                     "columns": columns,
                 },

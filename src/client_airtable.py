@@ -4,7 +4,7 @@ import pandas as pd
 from pyairtable import Api, Table, Base
 from typing import Dict, List
 from keboola.component.exceptions import UserException
-from keboola.component import CommonInterface
+from client_storage import SAPIClient
 from configuration import ColumnConfig
 
 
@@ -654,10 +654,10 @@ def get_sapi_column_definition(table_id: str, storage_url: str, storage_token: s
         storage_token: Storage API token
 
     Returns:
-        List of column configuration dicts
+        List of column configuration dicts with Keboola data types
     """
-    storage_client = CommonInterface.get_storage_client(storage_url, storage_token)
-    table_detail = storage_client.tables.detail(table_id)
+    storage_client = SAPIClient(storage_url, storage_token)
+    table_detail = storage_client.get_table_detail(table_id)
     columns = []
 
     if table_detail.get("isTyped") and table_detail.get("definition"):
@@ -665,9 +665,7 @@ def get_sapi_column_definition(table_id: str, storage_url: str, storage_token: s
         columns_to_process = [
             {
                 "name": column["name"],
-                "dtype": map_to_airtable_type(
-                    column["definition"].get("type", "STRING")
-                ),
+                "dtype": column["definition"].get("type", "STRING"),
             }
             for column in table_detail["definition"]["columns"]
         ]
@@ -676,7 +674,7 @@ def get_sapi_column_definition(table_id: str, storage_url: str, storage_token: s
         columns_to_process = [
             {
                 "name": col_name,
-                "dtype": "singleLineText",
+                "dtype": "STRING",
             }
             for col_name in table_detail.get("columns", [])
         ]

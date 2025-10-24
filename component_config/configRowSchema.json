@@ -5,7 +5,6 @@
   "properties": {
     "base_id": {
       "type": "string",
-      "enum": [],
       "title": "Base ID",
       "format": "select",
       "description": "The ID of the Airtable base where the table is located.",
@@ -34,10 +33,9 @@
       "properties": {
         "table_name": {
           "type": "string",
-          "enum": [],
-          "title": "Table Name",
+          "title": "Table Name or Table ID",
           "format": "select",
-          "description": "The name of the table to be created/updated in the specified base.",
+          "description": "The name/id of the table to be created/updated in the specified base.",
           "propertyOrder": 1,
           "options": {
             "tags": true,
@@ -52,7 +50,7 @@
             "async": {
               "label": "LOAD TABLES",
               "action": "list_tables",
-              "autoload": ["base_id"]
+              "autoload": ["parameters.base_id"]
             }
           }
         },
@@ -72,7 +70,7 @@
             "async": {
               "label": "LOAD COLUMNS",
               "action": "return_columns_data",
-              "autoload": ["table_name"]
+              "autoload": ["parameters.destination.table_name"]
             }
           }
         },
