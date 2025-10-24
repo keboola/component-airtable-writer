@@ -11,8 +11,7 @@
       "description": "The ID of the Airtable base where the table is located.",
       "propertyOrder": 1,
       "options": {
-        "tags": true,
-        "creatable": true
+        "tags": true
       }
     },
     "load_bases": {
@@ -22,7 +21,8 @@
       "options": {
         "async": {
           "label": "LOAD BASES",
-          "action": "list_bases"
+          "action": "list_bases",
+          "autoload": []
         }
       }
     },
@@ -51,7 +51,8 @@
           "options": {
             "async": {
               "label": "LOAD TABLES",
-              "action": "list_tables"
+              "action": "list_tables",
+              "autoload": ["base_id"]
             }
           }
         },
@@ -70,7 +71,8 @@
           "options": {
             "async": {
               "label": "LOAD COLUMNS",
-              "action": "return_columns_data"
+              "action": "return_columns_data",
+              "autoload": ["table_name"]
             }
           }
         },

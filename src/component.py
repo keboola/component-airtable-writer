@@ -1,7 +1,7 @@
 import logging
 from keboola.component.base import ComponentBase, sync_action
 from keboola.component.exceptions import UserException
-from keboola.component.sync_actions import SelectElement
+from keboola.component.sync_actions import SelectElement, ValidationResult, MessageType
 from configuration import Configuration
 from client_airtable import (
     build_field_mapping,
@@ -105,14 +105,17 @@ class Component(ComponentBase):
             self.api.bases()
         except Exception as e:
             raise UserException(f"Failed to connect to Airtable: {e}")
+        return ValidationResult(
+            "Connection successful",
+            MessageType.SUCCESS,
+        )
 
     @sync_action("list_bases")
     def list_bases(self):
         """List all accessible Airtable bases for dropdown."""
         if not self.params.api_token:
             raise UserException("API token must be set to list bases.")
-        bases = self.api.bases()
-        return [SelectElement(b["id"], b["name"]) for b in bases]
+        return [SelectElement(b.id, b.name) for b in self.api.bases()]
 
     @sync_action("list_tables")
     def list_tables(self):
@@ -123,7 +126,7 @@ class Component(ComponentBase):
             raise UserException("Base ID must be set to list tables.")
         base = self.api.base(self.params.base_id)
         schema = base.schema()
-        return [SelectElement(t["id"], t["name"]) for t in schema["tables"]]
+        return [SelectElement(t.id, t.name) for t in schema.tables]
 
     @sync_action("return_columns_data")
     def return_columns_data(self):
@@ -164,7 +167,7 @@ class Component(ComponentBase):
 
 
 """
-        Main entrypoint
+Main entrypoint
 """
 if __name__ == "__main__":
     try:

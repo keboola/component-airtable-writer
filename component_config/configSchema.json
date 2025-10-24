@@ -7,21 +7,15 @@
   "properties": {
     "#api_token": {
       "type": "string",
-      "format": "password",
       "title": "API Token",
+      "format": "password",
       "description": "Valid PAT token. Should have data.records:write. Optionally schema.bases:write if adding or editing new tables via component.",
       "propertyOrder": 1
     },
     "test_connection": {
       "type": "button",
-      "format": "sync-action",
-      "propertyOrder": 2,
-      "options": {
-        "async": {
-          "label": "TEST CONNECTION",
-          "action": "testConnection"
-        }
-      }
+      "format": "test-connection",
+      "propertyOrder": 2
     }
   }
 }
