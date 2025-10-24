@@ -38,7 +38,7 @@ class Component(ComponentBase):
             table = get_or_create_table(
                 self.api,
                 self.params.base_id,
-                self.params.table_name,
+                self.params.destination.table_name,
                 df,
                 self.params.destination.columns,
             )
