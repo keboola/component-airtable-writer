@@ -1,7 +1,7 @@
 from enum import Enum
 from typing import Optional
 from keboola.component.exceptions import UserException
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, model_validator, ValidationError
 
 
 class LoadType(str, Enum):
@@ -28,6 +28,13 @@ class Configuration(BaseModel):
     api_token: str = Field(alias="#api_token")
     destination: Destination = Field(default_factory=Destination)
     debug: bool = False
+
+    def __init__(self, **data):
+        try:
+            super().__init__(**data)
+        except ValidationError as e:
+            error_messages = [f"{err['loc'][0]}: {err['msg']}" for err in e.errors()]
+            raise UserException(f"Validation Error: {', '.join(error_messages)}")
 
     @model_validator(mode="after")
     def check_token(self):

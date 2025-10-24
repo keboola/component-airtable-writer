@@ -39,6 +39,7 @@
           "description": "The name/id of the table to be created/updated in the specified base.",
           "propertyOrder": 1,
           "options": {
+            "creatable": true,
             "async": {
               "label": "LOAD TABLES",
               "action": "list_tables",
