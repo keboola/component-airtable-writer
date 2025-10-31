@@ -392,7 +392,7 @@ def get_or_create_table(
     try:
         base_schema = base.schema()
         existing_table_names = [table.name for table in base_schema.tables]
-        
+
         if table_name in existing_table_names:
             logging.info(f"📋 Found existing table '{table_name}'")
             return base.table(table_name)
@@ -401,8 +401,10 @@ def get_or_create_table(
                 f"📋 Table '{table_name}' not found in base. Will create new table."
             )
             # Create new table with schema from input data
-            return create_table_from_dataframe(base, table_name, input_df, column_configs)
-            
+            return create_table_from_dataframe(
+                base, table_name, input_df, column_configs
+            )
+
     except Exception as e:
         logging.error(f"❌ Failed to check base schema or create table: {e}")
         raise UserException(f"Failed to access or create table '{table_name}': {e}")
