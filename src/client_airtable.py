@@ -8,7 +8,9 @@ from client_storage import SAPIClient
 from configuration import ColumnConfig
 
 
-def map_records(records: List, field_mapping: Dict, column_configs: List = None) -> List:
+def map_records(
+    records: List, field_mapping: Dict, column_configs: List = None
+) -> List:
     """
     Map input records to Airtable field names using the provided field mapping.
     Note: Input records should already be filtered to only include mappable columns.
@@ -27,7 +29,7 @@ def map_records(records: List, field_mapping: Dict, column_configs: List = None)
         for col in column_configs:
             if col.pk and col.dtype in ["number", "currency", "percent"]:
                 pk_numeric_fields.add(col.destination_name)
-    
+
     mapped_records = []
     for rec in records:
         mapped = {}
