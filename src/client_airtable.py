@@ -405,33 +405,46 @@ def create_table_from_dataframe(
             "Please configure columns using the 'Load Columns' button in the UI."
         )
 
-    # Find the primary key field to place it first (if one exists)
-    pk_field_config = None
-    other_fields = []
+    # Airtable requires the first field to be one of: singleLineText, email, url, phoneNumber, autoNumber
+    VALID_PRIMARY_TYPES = [
+        "singleLineText",
+        "email",
+        "url",
+        "phoneNumber",
+        "autoNumber",
+    ]
 
-    for col_config in column_configs:
-        if col_config.pk:
-            pk_field_config = col_config
-        else:
-            other_fields.append(col_config)
+    # Reorder fields: Put PK fields first (if any), then remaining fields
+    # This ensures the most important identifier becomes Airtable's primary field
+    pk_configs = [col for col in column_configs if col.pk]
+    non_pk_configs = [col for col in column_configs if not col.pk]
 
-    # Build fields list - if PK exists, put it first; otherwise use original order
-    if pk_field_config:
-        fields_to_process = [pk_field_config] + other_fields
-    else:
-        fields_to_process = column_configs
+    # Use PK-first ordering if PKs exist, otherwise keep original order
+    ordered_configs = (pk_configs + non_pk_configs) if pk_configs else column_configs
+
+    if pk_configs:
+        pk_names = [col.destination_name for col in pk_configs]
+        logging.info(f"📌 Reordering fields: PK fields {pk_names} will be placed first")
 
     fields = []
-    for col_config in fields_to_process:
+    for idx, col_config in enumerate(ordered_configs):
         field_config = {
             "name": col_config.destination_name,
             "type": col_config.dtype,
         }
 
-        # Typecast primary key fields to singleLineText (valid Airtable primary field type)
-        if col_config.pk:
+        # Check if this is the first field and if it needs type conversion
+        is_first_field = idx == 0
+
+        if is_first_field and col_config.dtype not in VALID_PRIMARY_TYPES:
+            # First field must be a valid Airtable primary type
+            original_type = col_config.dtype
             field_config["type"] = "singleLineText"
-            # singleLineText doesn't need options
+            logging.warning(
+                f"⚠️ First field '{col_config.destination_name}' type '{original_type}' is not valid for Airtable primary field. "
+                f"Converting to 'singleLineText'. Consider using a valid primary type "
+                f"({', '.join(VALID_PRIMARY_TYPES)}) for this field."
+            )
         elif col_config.dtype == "number":
             precision = detect_number_precision(df, col_config.source_name)
             precision = precision if precision > 0 else 0
