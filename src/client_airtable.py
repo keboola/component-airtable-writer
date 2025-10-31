@@ -139,8 +139,8 @@ def process_create_batches(table: Table, records: List, batch_size: int) -> Dict
         batch = records[i : i + batch_size]
 
         try:
-            # Use pyairtable's batch_create method
-            created_records = table.batch_create(batch)
+            # Use pyairtable's batch_create method with typecast for auto-conversion
+            created_records = table.batch_create(batch, typecast=True)
 
             for record in created_records:
                 record_id = record["id"]
@@ -366,6 +366,44 @@ def validate_connection(api: Api, base_id: str) -> None:
 # ============================================================================
 
 
+def detect_number_precision(df: pd.DataFrame, column_name: str) -> int:
+    """
+    Detect the appropriate precision for a number field based on actual data.
+
+    Args:
+        df: DataFrame containing the data
+        column_name: Name of the column to analyze
+
+    Returns:
+        Precision value (0-8) representing decimal places needed
+    """
+    if column_name not in df.columns:
+        return 0  # Default to integer
+
+    # Get non-null values
+    values = df[column_name].dropna()
+
+    if len(values) == 0:
+        return 0
+
+    # Check if all values are integers
+    if pd.api.types.is_integer_dtype(values):
+        return 0
+
+    # For float types, determine max decimal places needed
+    max_precision = 0
+    for val in values:
+        if pd.notna(val):
+            # Convert to string and count decimal places
+            str_val = str(float(val))
+            if "." in str_val:
+                decimal_places = len(str_val.split(".")[1].rstrip("0"))
+                max_precision = max(max_precision, decimal_places)
+
+    # Cap at 8 (Airtable's maximum)
+    return min(max_precision, 8)
+
+
 def get_or_create_table(
     api: Api,
     base_id: str,
@@ -433,6 +471,42 @@ def create_table_from_dataframe(
                 "name": col_config.destination_name,
                 "type": col_config.dtype,
             }
+
+            if col_config.dtype == "number":
+                precision = detect_number_precision(df, col_config.source_name)
+                precision = precision if precision > 0 else 0
+                field_config["options"] = {"precision": precision}
+            elif col_config.dtype == "currency":
+                precision = detect_number_precision(df, col_config.source_name)
+                precision = precision if precision > 0 else 2
+                field_config["options"] = {"precision": precision}
+            elif col_config.dtype == "percent":
+                precision = detect_number_precision(df, col_config.source_name)
+                field_config["options"] = {"precision": precision}
+            elif col_config.dtype == "date":
+                # Date fields require dateFormat options
+                field_config["options"] = {
+                    "dateFormat": {"name": "iso", "format": "YYYY-MM-DD"}
+                }
+            elif col_config.dtype == "dateTime":
+                # DateTime fields require dateFormat and timeFormat options
+                field_config["options"] = {
+                    "dateFormat": {"name": "iso", "format": "YYYY-MM-DD"},
+                    "timeFormat": {"name": "24hour", "format": "HH:mm"},
+                    "timeZone": "utc",
+                }
+            elif col_config.dtype == "duration":
+                # Duration fields require durationFormat
+                field_config["options"] = {"durationFormat": "h:mm:ss"}
+            elif col_config.dtype == "singleSelect":
+                field_config["options"] = {
+                    "choices": []
+                }  # Typecasted during data write
+            elif col_config.dtype == "multipleSelects":
+                field_config["options"] = {
+                    "choices": []
+                }  # Typecasted during data write
+
             fields.append(field_config)
     else:
         # Fallback to automatic inference
@@ -458,11 +532,10 @@ def create_table_from_dataframe(
         f"🆕 Creating new table '{table_name}' with fields: {[f['name'] for f in fields]}"
     )
 
-    table_config = {"name": table_name, "fields": fields}
-
     try:
         # Use pyairtable's native create_table method
-        created_table = base.create_table(table_config)
+        # Signature: base.create_table(name: str, fields: Sequence[dict], description: str = "")
+        created_table = base.create_table(table_name, fields)
         logging.info(f"✅ Successfully created table '{table_name}'")
         return created_table
 
