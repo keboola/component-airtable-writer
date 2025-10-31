@@ -65,7 +65,9 @@ class Component(ComponentBase):
 
             # Process the records with enhanced batch functionality
             records = filtered_df.to_dict(orient="records")
-            mapped_records = map_records(records, field_mapping)
+            mapped_records = map_records(
+                records, field_mapping, self.params.destination.columns
+            )
 
             load_type = self.params.destination.load_type
             upsert_key_fields = None

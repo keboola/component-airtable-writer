@@ -8,7 +8,7 @@ from client_storage import SAPIClient
 from configuration import ColumnConfig
 
 
-def map_records(records: List, field_mapping: Dict) -> List:
+def map_records(records: List, field_mapping: Dict, column_configs: List = None) -> List:
     """
     Map input records to Airtable field names using the provided field mapping.
     Note: Input records should already be filtered to only include mappable columns.
@@ -16,10 +16,18 @@ def map_records(records: List, field_mapping: Dict) -> List:
     Args:
         records: List of input records (dicts) with only mappable columns.
         field_mapping: Mapping from input column names to Airtable field names.
+        column_configs: Optional list of ColumnConfig objects to handle PK numeric conversion.
 
     Returns:
         List of tuples: (record_id, mapped_record_dict)
     """
+    # Build set of numeric PK fields that need string conversion
+    pk_numeric_fields = set()
+    if column_configs:
+        for col in column_configs:
+            if col.pk and col.dtype in ["number", "currency", "percent"]:
+                pk_numeric_fields.add(col.destination_name)
+    
     mapped_records = []
     for rec in records:
         mapped = {}
@@ -47,6 +55,9 @@ def map_records(records: List, field_mapping: Dict) -> List:
             # Handle None/NaN values properly
             if pd.isna(v) or v is None:
                 mapped[airtable_field] = None
+            # Convert numeric PK values to strings due to API constraints
+            elif airtable_field in pk_numeric_fields and isinstance(v, (int, float)):
+                mapped[airtable_field] = str(v)
             else:
                 mapped[airtable_field] = v
 
