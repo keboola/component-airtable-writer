@@ -1,29 +1,20 @@
 import logging
+
+import pandas as pd
 from keboola.component.base import ComponentBase, sync_action
 from keboola.component.exceptions import UserException
-from keboola.component.sync_actions import SelectElement, ValidationResult, MessageType
+from keboola.component.sync_actions import MessageType, SelectElement, ValidationResult
+
+from client_airtable import AirtableClient
 from configuration import Configuration
-from client_airtable import (
-    build_field_mapping,
-    map_records,
-    get_or_create_table,
-    get_table_schema,
-    compare_schemas,
-    process_records_batch,
-    clear_table_for_full_load,
-    get_primary_key_fields,
-    map_to_airtable_type,
-    get_sapi_column_definition,
-)
-from pyairtable import Api
-import pandas as pd
+from utils import get_sapi_column_definition, map_to_airtable_type
 
 
 class Component(ComponentBase):
     def __init__(self):
         super().__init__()
         self.params = Configuration(**self.configuration.parameters)
-        self.api = Api(self.params.api_token)
+        self.airtable_client = AirtableClient(self.params)
 
     def run(self):
         # Get input data first
@@ -32,67 +23,40 @@ class Component(ComponentBase):
             raise UserException("No input tables found")
         input_table_path = input_tables[0].full_path
         df = pd.read_csv(input_table_path)
-        logging.info(f"Loaded input data: {len(df)} rows")
 
         try:
-            table = get_or_create_table(
-                self.api,
-                self.params.base_id,
-                self.params.destination.table_name,
-                df,
-                self.params.destination.columns,
-            )
+            # Get or create table using the client
+            table = self.airtable_client.get_or_create_table(df)
 
             # Build field mapping for the table
-            field_mapping = build_field_mapping(self.params.destination.columns)
+            field_mapping = self.airtable_client.build_field_mapping()
 
             # Only use columns present in the mapping
             mappable_columns = [col for col in df.columns if col in field_mapping]
             filtered_df = df[mappable_columns]
-            logging.info(
-                f"📊 Processing {len(mappable_columns)} columns: {mappable_columns}"
-            )
+            logging.info(f"📊 Processing {len(mappable_columns)} columns: {mappable_columns}")
 
             # Compare schemas and log any differences
-            table_schema = get_table_schema(table)
-            schema_comparison = compare_schemas(df, table_schema)
-
-            if schema_comparison["needs_update"]:
-                logging.warning(
-                    f"⚠️ The following input columns are missing in Airtable "
-                    f"and will not be written: {schema_comparison['missing_in_table']}"
-                )
+            self.airtable_client.compare_schemas(df, self.airtable_client.get_table_schema(table))
 
             # Process the records with enhanced batch functionality
             records = filtered_df.to_dict(orient="records")
-            mapped_records = map_records(
-                records, field_mapping, self.params.destination.columns
-            )
+            mapped_records = self.airtable_client.map_records(records, field_mapping)
 
             load_type = self.params.destination.load_type
-            upsert_key_fields = None
-            # Determine upsert key fields based on load type
-            if load_type == "Incremental Load":
-                upsert_key_fields = get_primary_key_fields(
-                    self.params.destination.columns
-                )
+            # Handle Full Load mode
+            if load_type == "Full Load":
+                self.airtable_client.clear_table_for_full_load(table)
+            # Validate Incremental Load has primary keys
+            elif load_type == "Incremental Load":
+                upsert_key_fields = self.airtable_client.get_primary_key_fields()
                 if not upsert_key_fields:
                     raise UserException(
                         "Incremental load requires at least one primary key field to be set in the configuration."
                     )
-            elif self.params.destination.load_type == "Full Load":
-                clear_table_for_full_load(table)
-                upsert_key_fields = None
-            elif self.params.destination.load_type == "Append":
-                upsert_key_fields = None
 
-            # Using new batch processing - always batches even for single records
-            process_records_batch(
-                table,
-                mapped_records,
-                load_type=load_type,
-                upsert_key_fields=upsert_key_fields,
-            )
+            # Process records using the client
+            self.airtable_client.process_records_batch(table, mapped_records, load_type)
 
         except Exception as e:
             raise UserException(f"Failed to process data: {str(e)}")
@@ -104,7 +68,7 @@ class Component(ComponentBase):
         if not self.params.api_token:
             raise UserException("API token must be set to test the connection.")
         try:
-            self.api.bases()
+            self.airtable_client.test_connection()
         except Exception as e:
             raise UserException(f"Failed to connect to Airtable: {e}")
         return ValidationResult(
@@ -117,7 +81,7 @@ class Component(ComponentBase):
         """List all accessible Airtable bases for dropdown."""
         if not self.params.api_token:
             raise UserException("API token must be set to list bases.")
-        return [SelectElement(b.id, b.name) for b in self.api.bases()]
+        return [SelectElement(b.id, b.name) for b in self.airtable_client.list_bases()]
 
     @sync_action("list_tables")
     def list_tables(self):
@@ -126,17 +90,13 @@ class Component(ComponentBase):
             raise UserException("API token must be set to list tables.")
         if not self.params.base_id:
             raise UserException("Base ID must be set to list tables.")
-        base = self.api.base(self.params.base_id)
-        return [SelectElement(t.id, t.name) for t in base.schema().tables]
+        return [SelectElement(t.id, t.name) for t in self.airtable_client.list_tables()]
 
     @sync_action("return_columns_data")
     def return_columns_data(self):
         """Load columns from input mapping and return configuration data."""
         # 1. Get input table mapping (raise error if not configured)
-        if (
-            not self.configuration.tables_input_mapping
-            or len(self.configuration.tables_input_mapping) != 1
-        ):
+        if not self.configuration.tables_input_mapping or len(self.configuration.tables_input_mapping) != 1:
             raise UserException(
                 "Exactly one input table must be mapped in the configuration. "
                 "Please add an input table mapping in the UI or configuration."

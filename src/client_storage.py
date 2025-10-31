@@ -1,7 +1,7 @@
-import urllib.request
 import json
-import time
 import logging
+import time
+import urllib.request
 
 
 class SAPIClient:
@@ -26,4 +26,7 @@ class SAPIClient:
                 if attempt < self.retry_attempts - 1:
                     time.sleep(attempt + 1)
 
-        raise last_exception
+        if last_exception is not None:
+            raise last_exception
+        else:
+            raise RuntimeError("All attempts to get table detail failed, but no exception was captured.")
