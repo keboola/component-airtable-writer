@@ -1,10 +1,7 @@
 {
   "type": "object",
   "title": "Table configuration",
-  "required": [
-    "base_id",
-    "destination"
-  ],
+  "required": ["base_id", "destination"],
   "properties": {
     "base_id": {
       "enum": [],
@@ -24,11 +21,7 @@
     "destination": {
       "type": "object",
       "title": "Destination",
-      "required": [
-        "table_name",
-        "columns",
-        "load_type"
-      ],
+      "required": ["table_name", "columns", "load_type"],
       "propertyOrder": 2,
       "properties": {
         "table_name": {
@@ -43,18 +36,12 @@
             "async": {
               "label": "LOAD TABLES",
               "action": "list_tables",
-              "autoload": [
-                "parameters.base_id"
-              ]
+              "autoload": ["parameters.base_id"]
             }
           }
         },
         "load_type": {
-          "enum": [
-            "Append",
-            "Full Load",
-            "Incremental Load"
-          ],
+          "enum": ["Append", "Full Load", "Incremental Load"],
           "type": "string",
           "title": "Load Type",
           "default": "Append",
@@ -66,10 +53,7 @@
           "items": {
             "type": "object",
             "title": "Column",
-            "required": [
-              "source_name",
-              "destination_name"
-            ],
+            "required": ["source_name", "destination_name"],
             "properties": {
               "source_name": {
                 "type": "string",
@@ -119,17 +103,25 @@
           "format": "table",
           "propertyOrder": 3
         },
-        "load_columns_button":{
-          "type":"button",
-          "format":"sync-action",
-          "propertyOrder":4,
+        "load_columns_button": {
+          "type": "button",
+          "format": "sync-action",
+          "propertyOrder": 4,
           "options": {
             "async": {
-              "cache":false,
+              "cache": false,
               "label": "LOAD COLUMNS",
               "action": "return_columns_data"
             }
           }
+        },
+        "debug": {
+          "type": "boolean",
+          "title": "Debug mode",
+          "format": "checkbox",
+          "default": false,
+          "description": "If enabled, the component will produce detailed logs",
+          "propertyOrder": 5
         }
       }
     },

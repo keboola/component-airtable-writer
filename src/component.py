@@ -59,13 +59,15 @@ class Component(ComponentBase):
 
             if schema_comparison["needs_update"]:
                 logging.warning(
-                    "⚠️ The following input columns are missing in Airtable",
-                    f" and will not be written: {schema_comparison['missing_in_table']}",
+                    f"⚠️ The following input columns are missing in Airtable "
+                    f"and will not be written: {schema_comparison['missing_in_table']}"
                 )
 
             # Process the records with enhanced batch functionality
             records = filtered_df.to_dict(orient="records")
-            mapped_records = map_records(records, field_mapping)
+            mapped_records = map_records(
+                records, field_mapping, self.params.destination.columns
+            )
 
             load_type = self.params.destination.load_type
             upsert_key_fields = None
