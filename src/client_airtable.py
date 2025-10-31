@@ -149,7 +149,8 @@ def process_create_batches(table: Table, records: List, batch_size: int) -> Dict
             logging.debug(f"✅ Created batch of {len(batch)} records")
 
         except Exception as e:
-            logging.error(f"❌ Batch create failed: {str(e)}", exc_info=True)
+            logging.error("Batch failed to insert records. Use debug for more info.")
+            logging.debug(f"Batch fail details: {str(e)}")
 
             # Log error for each record in the failed batch
             for j, record in enumerate(batch):
@@ -193,7 +194,7 @@ def process_update_batches(table: Table, records: List, batch_size: int) -> Dict
             logging.debug(f"✅ Updated batch of {len(batch)} records")
 
         except Exception as e:
-            logging.error(f"❌ Batch update failed: {str(e)}", exc_info=True)
+            logging.debug(f"❌ Batch update failed: {str(e)}")
 
             # Log error for each record in the failed batch
             for record in batch:
@@ -472,7 +473,11 @@ def create_table_from_dataframe(
                 "type": col_config.dtype,
             }
 
-            if col_config.dtype == "number":
+            # Typecast primary key fields to singleLineText (valid Airtable primary field type)
+            if col_config.pk:
+                field_config["type"] = "singleLineText"
+                # singleLineText doesn't need options
+            elif col_config.dtype == "number":
                 precision = detect_number_precision(df, col_config.source_name)
                 precision = precision if precision > 0 else 0
                 field_config["options"] = {"precision": precision}
