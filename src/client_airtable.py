@@ -164,50 +164,6 @@ def process_create_batches(table: Table, records: List, batch_size: int) -> Dict
     }
 
 
-def process_update_batches(table: Table, records: List, batch_size: int) -> Dict:
-    """
-    Process update operations in batches using Airtable's batch update API.
-
-    Args:
-        table: Airtable table object
-        records: List of record dicts to update
-        batch_size: Maximum records per batch
-    Returns:
-        Dict with log_rows, updated_count, error_count
-    """
-    log_rows = []
-    updated_count = 0
-    error_count = 0
-
-    for i in range(0, len(records), batch_size):
-        batch = records[i : i + batch_size]
-
-        try:
-            # Use pyairtable's batch_update method
-            updated_records = table.batch_update(batch)
-
-            for record in updated_records:
-                record_id = record["id"]
-                updated_count += 1
-                _append_log_row(log_rows, record_id, "update")
-
-            logging.debug(f"✅ Updated batch of {len(batch)} records")
-
-        except Exception as e:
-            logging.debug(f"❌ Batch update failed: {str(e)}")
-
-            # Log error for each record in the failed batch
-            for record in batch:
-                error_count += 1
-                _append_log_row(log_rows, record.get("id", "unknown"), "error")
-
-    return {
-        "log_rows": log_rows,
-        "updated_count": updated_count,
-        "error_count": error_count,
-    }
-
-
 def process_upsert_batches(
     table: Table,
     records: List,
@@ -341,27 +297,6 @@ def get_primary_key_fields(column_configs: List) -> List[str]:
     return pk_fields
 
 
-def validate_connection(api: Api, base_id: str) -> None:
-    """
-    Connect to Airtable using the API instance and check access to the base.
-    Does not validate table existence since tables may be created dynamically.
-
-    Args:
-        api: Airtable API instance
-        base_id: Airtable base ID
-    """
-
-    logging.info(f"Validating connection to Airtable base '{base_id}'")
-    try:
-        base = api.base(base_id)
-        # Just check that we can access the base - don't check for specific table
-        # since we support table creation
-        _ = base.schema()
-    except Exception as e:
-        raise UserException(f"Failed to connect to Airtable base '{base_id}': {e}")
-    logging.info(f"✅ Successfully connected to Airtable base '{base_id}'")
-
-
 # ============================================================================
 # TABLE MANAGEMENT FUNCTIONS
 # ============================================================================
@@ -460,86 +395,78 @@ def create_table_from_dataframe(
         base: Airtable Base object
         table_name: Name of the table to create
         df: DataFrame to infer schema from
-        column_configs: Optional list of ColumnConfig objects for custom field types
+        column_configs: List of ColumnConfig objects for custom field types (required)
     Returns:
         Created Table object
     """
-    if column_configs:
-        # Use custom column configurations
-        fields = []
-        for col_config in column_configs:
-            field_config = {
-                "name": col_config.destination_name,
-                "type": col_config.dtype,
-            }
-
-            # Typecast primary key fields to singleLineText (valid Airtable primary field type)
-            if col_config.pk:
-                field_config["type"] = "singleLineText"
-                # singleLineText doesn't need options
-            elif col_config.dtype == "number":
-                precision = detect_number_precision(df, col_config.source_name)
-                precision = precision if precision > 0 else 0
-                field_config["options"] = {"precision": precision}
-            elif col_config.dtype == "currency":
-                precision = detect_number_precision(df, col_config.source_name)
-                precision = precision if precision > 0 else 2
-                field_config["options"] = {"precision": precision}
-            elif col_config.dtype == "percent":
-                precision = detect_number_precision(df, col_config.source_name)
-                field_config["options"] = {"precision": precision}
-            elif col_config.dtype == "date":
-                # Date fields require dateFormat options
-                field_config["options"] = {
-                    "dateFormat": {"name": "iso", "format": "YYYY-MM-DD"}
-                }
-            elif col_config.dtype == "dateTime":
-                # DateTime fields require dateFormat and timeFormat options
-                field_config["options"] = {
-                    "dateFormat": {"name": "iso", "format": "YYYY-MM-DD"},
-                    "timeFormat": {"name": "24hour", "format": "HH:mm"},
-                    "timeZone": "utc",
-                }
-            elif col_config.dtype == "duration":
-                # Duration fields require durationFormat
-                field_config["options"] = {"durationFormat": "h:mm:ss"}
-            elif col_config.dtype == "singleSelect":
-                field_config["options"] = {
-                    "choices": []
-                }  # Typecasted during data write
-            elif col_config.dtype == "multipleSelects":
-                field_config["options"] = {
-                    "choices": []
-                }  # Typecasted during data write
-
-            fields.append(field_config)
+    if not column_configs:
+        raise UserException(
+            "Column configuration is required for table creation. "
+            "Please configure columns using the 'Load Columns' button in the UI."
+        )
+    
+    # Find the primary key field to place it first (if one exists)
+    pk_field_config = None
+    other_fields = []
+    
+    for col_config in column_configs:
+        if col_config.pk:
+            pk_field_config = col_config
+        else:
+            other_fields.append(col_config)
+    
+    # Build fields list - if PK exists, put it first; otherwise use original order
+    if pk_field_config:
+        fields_to_process = [pk_field_config] + other_fields
     else:
-        # Fallback to automatic inference
-        fields = infer_airtable_fields_from_dataframe(df)
+        fields_to_process = column_configs
+    
+    fields = []
+    for col_config in fields_to_process:
+        field_config = {
+            "name": col_config.destination_name,
+            "type": col_config.dtype,
+        }
 
-    # Ensure at least one field exists and first field can be primary
-    if not fields:
-        raise UserException("Cannot create table: no valid fields found in input data")
+        # Typecast primary key fields to singleLineText (valid Airtable primary field type)
+        if col_config.pk:
+            field_config["type"] = "singleLineText"
+            # singleLineText doesn't need options
+        elif col_config.dtype == "number":
+            precision = detect_number_precision(df, col_config.source_name)
+            precision = precision if precision > 0 else 0
+            field_config["options"] = {"precision": precision}
+        elif col_config.dtype == "currency":
+            precision = detect_number_precision(df, col_config.source_name)
+            precision = precision if precision > 0 else 2
+            field_config["options"] = {"precision": precision}
+        elif col_config.dtype == "percent":
+            precision = detect_number_precision(df, col_config.source_name)
+            field_config["options"] = {"precision": precision}
+        elif col_config.dtype == "date":
+            field_config["options"] = {
+                "dateFormat": {"name": "iso", "format": "YYYY-MM-DD"}
+            }
+        elif col_config.dtype == "dateTime":
+            field_config["options"] = {
+                "dateFormat": {"name": "iso", "format": "YYYY-MM-DD"},
+                "timeFormat": {"name": "24hour", "format": "HH:mm"},
+                "timeZone": "utc",
+            }
+        elif col_config.dtype == "duration":
+            field_config["options"] = {"durationFormat": "h:mm:ss"}
+        elif col_config.dtype == "singleSelect":
+            field_config["options"] = {"choices": []}
+        elif col_config.dtype == "multipleSelects":
+            field_config["options"] = {"choices": []}
 
-    # Ensure first field is a valid primary field type
-    primary_field_types = [
-        "singleLineText",
-        "email",
-        "url",
-        "phoneNumber",
-        "autoNumber",
-    ]
-    if fields[0]["type"] not in primary_field_types:
-        # Insert a default primary field at the beginning
-        fields.insert(0, {"name": "Primary", "type": "singleLineText"})
+        fields.append(field_config)
 
     logging.info(
         f"🆕 Creating new table '{table_name}' with fields: {[f['name'] for f in fields]}"
     )
 
     try:
-        # Use pyairtable's native create_table method
-        # Signature: base.create_table(name: str, fields: Sequence[dict], description: str = "")
         created_table = base.create_table(table_name, fields)
         logging.info(f"✅ Successfully created table '{table_name}'")
         return created_table
@@ -551,89 +478,6 @@ def create_table_from_dataframe(
             f"Table creation failed. Please ensure the table '{table_name}' exists in your Airtable base "
             f"or create it manually with the following columns: {[f['name'] for f in fields]}"
         )
-
-
-def infer_airtable_field_type(series: pd.Series) -> str:
-    """
-    Infer the most appropriate Airtable field type for a pandas Series.
-
-    Args:
-        series: Pandas Series to infer type from
-    Returns:
-        Airtable field type as string
-    """
-    # Remove null values for type inference
-    non_null_series = series.dropna()
-
-    if len(non_null_series) == 0:
-        return "singleLineText"  # Default for empty columns
-
-    # Check for numeric types
-    if pd.api.types.is_numeric_dtype(non_null_series):
-        if pd.api.types.is_integer_dtype(non_null_series):
-            return "number"
-        else:
-            return "number"  # Float numbers
-
-    # Check for datetime
-    if pd.api.types.is_datetime64_any_dtype(non_null_series):
-        return "dateTime"
-
-    # Check for boolean
-    if pd.api.types.is_bool_dtype(non_null_series):
-        return "checkbox"
-
-    # For text fields, check if it should be single select (limited unique values)
-    if non_null_series.dtype == "object":
-        unique_count = non_null_series.nunique()
-        total_count = len(non_null_series)
-
-        # If less than 20 unique values and they represent < 80% of total, likely categorical
-        if unique_count <= 20 and (unique_count / total_count) < 0.8:
-            return "singleSelect"
-
-        # Check for long text (average length > 100 characters)
-        avg_length = non_null_series.str.len().mean()
-        if avg_length > 100:
-            return "multilineText"
-
-    # Default to single line text
-    return "singleLineText"
-
-
-def infer_airtable_fields_from_dataframe(df: pd.DataFrame) -> List[Dict]:
-    """
-    Infer Airtable field definitions from pandas DataFrame.
-
-    Args:
-        df: Input DataFrame
-    Returns:
-        List of Airtable field definition dicts
-    """
-    fields = []
-
-    for column in df.columns:
-        if column == "recordId":
-            continue  # Skip recordId as it's handled by Airtable
-
-        # Infer field type from data
-        field_type = infer_airtable_field_type(df[column])
-
-        field_config = {"name": column, "type": field_type}
-
-        # Add specific configurations for certain field types
-        if field_type == "singleSelect":
-            # Get unique values for single select options
-            unique_values = df[column].dropna().unique()
-            field_config["options"] = {
-                "choices": [
-                    {"name": str(val)} for val in unique_values[:50]
-                ]  # Limit to 50 options
-            }
-
-        fields.append(field_config)
-
-    return fields
 
 
 def get_table_schema(table: Table) -> Dict:
