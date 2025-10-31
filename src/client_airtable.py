@@ -454,7 +454,8 @@ def create_table_from_dataframe(
             original_type = col_config.dtype
             field_config["type"] = "singleLineText"
             logging.warning(
-                f"⚠️ First field '{col_config.destination_name}' type '{original_type}' is not valid for Airtable primary field. "
+                f"⚠️ First field '{col_config.destination_name}'"
+                f"type '{original_type}' is not valid for Airtable primary field."
                 f"Converting to 'singleLineText'. Consider using a valid primary type "
                 f"({', '.join(VALID_PRIMARY_TYPES)}) for this field."
             )
