@@ -388,17 +388,24 @@ def get_or_create_table(
     """
     base = api.base(base_id)
 
-    # Try to get existing table
+    # Try to get existing table by checking if it exists in the base schema
     try:
-        return base.table(table_name)
+        base_schema = base.schema()
+        existing_table_names = [table.name for table in base_schema.tables]
+        
+        if table_name in existing_table_names:
+            logging.info(f"📋 Found existing table '{table_name}'")
+            return base.table(table_name)
+        else:
+            logging.info(
+                f"📋 Table '{table_name}' not found in base. Will create new table."
+            )
+            # Create new table with schema from input data
+            return create_table_from_dataframe(base, table_name, input_df, column_configs)
+            
     except Exception as e:
-        logging.info(
-            f"📋 Table '{table_name}' not found or inaccessible. Will create new table."
-        )
-        logging.debug(f"Error details: {e}")
-
-        # Create new table with schema from input data
-        return create_table_from_dataframe(base, table_name, input_df, column_configs)
+        logging.error(f"❌ Failed to check base schema or create table: {e}")
+        raise UserException(f"Failed to access or create table '{table_name}': {e}")
 
 
 def create_table_from_dataframe(
