@@ -404,23 +404,23 @@ def create_table_from_dataframe(
             "Column configuration is required for table creation. "
             "Please configure columns using the 'Load Columns' button in the UI."
         )
-    
+
     # Find the primary key field to place it first (if one exists)
     pk_field_config = None
     other_fields = []
-    
+
     for col_config in column_configs:
         if col_config.pk:
             pk_field_config = col_config
         else:
             other_fields.append(col_config)
-    
+
     # Build fields list - if PK exists, put it first; otherwise use original order
     if pk_field_config:
         fields_to_process = [pk_field_config] + other_fields
     else:
         fields_to_process = column_configs
-    
+
     fields = []
     for col_config in fields_to_process:
         field_config = {
