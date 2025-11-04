@@ -15,8 +15,8 @@ class Component(ComponentBase):
     def __init__(self):
         super().__init__()
         self.params = Configuration(**self.configuration.parameters)
-        self.api = Api(self.params.api_token)
-        self.airtable_client = AirtableClient(self.api, self.params)
+        api = Api(self.params.api_token)
+        self.airtable_client = AirtableClient(api, self.params)
 
     def run(self):
         # Get input data first
