@@ -1,7 +1,8 @@
 from enum import Enum
 from typing import Optional
+
 from keboola.component.exceptions import UserException
-from pydantic import BaseModel, Field, model_validator, ValidationError
+from pydantic import BaseModel, Field, ValidationError, model_validator
 
 
 class LoadType(str, Enum):

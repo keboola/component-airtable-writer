@@ -1,22 +1,24 @@
 import logging
+
+import pandas as pd
 from keboola.component.base import ComponentBase, sync_action
 from keboola.component.exceptions import UserException
-from keboola.component.sync_actions import SelectElement, ValidationResult, MessageType
-from configuration import Configuration
+from keboola.component.sync_actions import MessageType, SelectElement, ValidationResult
+from pyairtable import Api
+
 from client_airtable import (
     build_field_mapping,
-    map_records,
-    get_or_create_table,
-    get_table_schema,
-    compare_schemas,
-    process_records_batch,
     clear_table_for_full_load,
+    compare_schemas,
+    get_or_create_table,
     get_primary_key_fields,
-    map_to_airtable_type,
     get_sapi_column_definition,
+    get_table_schema,
+    map_records,
+    map_to_airtable_type,
+    process_records_batch,
 )
-from pyairtable import Api
-import pandas as pd
+from configuration import Configuration
 
 
 class Component(ComponentBase):
@@ -49,15 +51,13 @@ class Component(ComponentBase):
             # Only use columns present in the mapping
             mappable_columns = [col for col in df.columns if col in field_mapping]
             filtered_df = df[mappable_columns]
-            logging.info(
-                f"📊 Processing {len(mappable_columns)} columns: {mappable_columns}"
-            )
+            logging.info(f"📊 Processing {len(mappable_columns)} columns: {mappable_columns}")
 
             # Compare schemas and log any differences
             table_schema = get_table_schema(table)
             schema_comparison = compare_schemas(df, table_schema)
 
-            if schema_comparison["needs_update"]:
+            if schema_comparison["missing_in_table"]:
                 logging.warning(
                     f"⚠️ The following input columns are missing in Airtable "
                     f"and will not be written: {schema_comparison['missing_in_table']}"
@@ -65,17 +65,13 @@ class Component(ComponentBase):
 
             # Process the records with enhanced batch functionality
             records = filtered_df.to_dict(orient="records")
-            mapped_records = map_records(
-                records, field_mapping, self.params.destination.columns
-            )
+            mapped_records = map_records(records, field_mapping, self.params.destination.columns)
 
             load_type = self.params.destination.load_type
             upsert_key_fields = None
             # Determine upsert key fields based on load type
             if load_type == "Incremental Load":
-                upsert_key_fields = get_primary_key_fields(
-                    self.params.destination.columns
-                )
+                upsert_key_fields = get_primary_key_fields(self.params.destination.columns)
                 if not upsert_key_fields:
                     raise UserException(
                         "Incremental load requires at least one primary key field to be set in the configuration."
@@ -133,10 +129,7 @@ class Component(ComponentBase):
     def return_columns_data(self):
         """Load columns from input mapping and return configuration data."""
         # 1. Get input table mapping (raise error if not configured)
-        if (
-            not self.configuration.tables_input_mapping
-            or len(self.configuration.tables_input_mapping) != 1
-        ):
+        if not self.configuration.tables_input_mapping or len(self.configuration.tables_input_mapping) != 1:
             raise UserException(
                 "Exactly one input table must be mapped in the configuration. "
                 "Please add an input table mapping in the UI or configuration."

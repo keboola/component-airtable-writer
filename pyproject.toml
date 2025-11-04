@@ -17,7 +17,7 @@ dependencies = [
 ]
 
 [tool.black]
-line-length = 88
+line-length = 120
 exclude = '''
 /(
     \.git

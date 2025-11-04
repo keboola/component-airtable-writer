@@ -1,16 +1,15 @@
 import logging
 from datetime import datetime
+
 import pandas as pd
-from pyairtable import Api, Table, Base
-from typing import Dict, List
 from keboola.component.exceptions import UserException
+from pyairtable import Api, Base, Table
+
 from client_storage import SAPIClient
 from configuration import ColumnConfig
 
 
-def map_records(
-    records: List, field_mapping: Dict, column_configs: List = None
-) -> List:
+def map_records(records: list, field_mapping: dict, column_configs: list = None) -> list:
     """
     Map input records to Airtable field names using the provided field mapping.
     Note: Input records should already be filtered to only include mappable columns.
@@ -39,11 +38,8 @@ def map_records(
         if (
             raw_id is None
             or raw_id == ""
-            or (
-                isinstance(raw_id, str)
-                and raw_id.strip().lower() in ["", "nan", "none"]
-            )
-            or (pd.notna(raw_id) and pd.isna(raw_id))
+            or (isinstance(raw_id, str) and raw_id.strip().lower() in ["", "nan", "none"])
+            or pd.isna(raw_id)
         ):
             record_id = None
         else:
@@ -69,9 +65,9 @@ def map_records(
 
 def process_records_batch(
     table: Table,
-    mapped_records: List,
+    mapped_records: list,
     load_type: str,
-    upsert_key_fields: List = None,
+    upsert_key_fields: list = None,
     batch_size: int = 10,
 ) -> None:
     """
@@ -103,12 +99,8 @@ def process_records_batch(
         total_processed += len(records)
 
     elif load_type == "Incremental Load":
-        logging.info(
-            f"Processing {len(records)} records as upserts (Incremental Load) using keys: {upsert_key_fields}"
-        )
-        upsert_results = process_upsert_batches(
-            table, records, upsert_key_fields, batch_size
-        )
+        logging.info(f"Processing {len(records)} records as upserts (Incremental Load) using keys: {upsert_key_fields}")
+        upsert_results = process_upsert_batches(table, records, upsert_key_fields, batch_size)
         log_rows.extend(upsert_results["log_rows"])
         total_created += upsert_results["created_count"]
         total_updated += upsert_results.get("updated_count", 0)
@@ -133,7 +125,7 @@ def process_records_batch(
     )
 
 
-def process_create_batches(table: Table, records: List, batch_size: int) -> Dict:
+def process_create_batches(table: Table, records: list, batch_size: int) -> dict:
     """
     Process create operations in batches using Airtable's batch create API.
 
@@ -179,10 +171,10 @@ def process_create_batches(table: Table, records: List, batch_size: int) -> Dict
 
 def process_upsert_batches(
     table: Table,
-    records: List,
-    upsert_key_fields: List,
+    records: list,
+    upsert_key_fields: list,
     batch_size: int,
-) -> Dict:
+) -> dict:
     """
     Process upsert operations using Airtable's native upsert functionality.
 
@@ -205,9 +197,7 @@ def process_upsert_batches(
         try:
             # Use Airtable's native upsert via batch_upsert
             upsert_batch = [{"fields": record} for record in batch]
-            response = table.batch_upsert(
-                upsert_batch, key_fields=upsert_key_fields, typecast=True
-            )
+            response = table.batch_upsert(upsert_batch, key_fields=upsert_key_fields, typecast=True)
 
             # Handle upsert response
             for record in response.get("records", []):
@@ -215,12 +205,11 @@ def process_upsert_batches(
                 _append_log_row(log_rows, record_id, "upsert")
 
             # Count created/updated
-            created_count += len(response.get("createdRecords", []))
-            updated_count += len(response.get("updatedRecords", []))
-            logging.debug(
-                f"✅ Upserted batch: {len(response.get('createdRecords', []))} created,"
-                f"{len(response.get('updatedRecords', []))} updated"
-            )
+            created_records = response.get("createdRecords", [])
+            updated_records = response.get("updatedRecords", [])
+            created_count += len(created_records)
+            updated_count += len(updated_records)
+            logging.debug(f"✅ Upserted batch: {len(created_records)} created, " f"{len(updated_records)} updated")
 
         except Exception as e:
             if "INVALID_VALUE_FOR_COLUMN" in str(e):
@@ -244,7 +233,7 @@ def process_upsert_batches(
     }
 
 
-def build_field_mapping(column_configs: List) -> Dict[str, str]:
+def build_field_mapping(column_configs: list) -> dict[str, str]:
     """
     Build field mapping from column configurations.
     Args:
@@ -256,9 +245,7 @@ def build_field_mapping(column_configs: List) -> Dict[str, str]:
         raise UserException("Column configuration is required.")
     computed_fields = ["Total billed"]
     return {
-        col.source_name: col.destination_name
-        for col in column_configs
-        if col.destination_name not in computed_fields
+        col.source_name: col.destination_name for col in column_configs if col.destination_name not in computed_fields
     }
 
 
@@ -294,7 +281,7 @@ def clear_table_for_full_load(table: Table):
         raise
 
 
-def get_primary_key_fields(column_configs: List) -> List[str]:
+def get_primary_key_fields(column_configs: list) -> list[str]:
     """
     Extract primary key field names from column configurations.
 
@@ -315,25 +302,27 @@ def get_primary_key_fields(column_configs: List) -> List[str]:
 # ============================================================================
 
 
-def detect_number_precision(df: pd.DataFrame, column_name: str) -> int:
+def detect_number_precision(df: pd.DataFrame, column_name: str, dtype: str = "number") -> int:
     """
     Detect the appropriate precision for a number field based on actual data.
 
     Args:
         df: DataFrame containing the data
         column_name: Name of the column to analyze
+        dtype: The Airtable field type (number, currency, or percent)
 
     Returns:
         Precision value (0-8) representing decimal places needed
     """
     if column_name not in df.columns:
-        return 0  # Default to integer
+        # Return default precision based on dtype
+        return 2 if dtype == "currency" else 0
 
     # Get non-null values
     values = df[column_name].dropna()
 
     if len(values) == 0:
-        return 0
+        return 2 if dtype == "currency" else 0
 
     # Check if all values are integers
     if pd.api.types.is_integer_dtype(values):
@@ -350,6 +339,9 @@ def detect_number_precision(df: pd.DataFrame, column_name: str) -> int:
                 max_precision = max(max_precision, decimal_places)
 
     # Cap at 8 (Airtable's maximum)
+    # If no precision detected, use defaults: currency=2, others=0
+    if max_precision == 0:
+        return 2 if dtype == "currency" else 0
     return min(max_precision, 8)
 
 
@@ -358,7 +350,7 @@ def get_or_create_table(
     base_id: str,
     table_name: str,
     input_df: pd.DataFrame,
-    column_configs: List = None,
+    column_configs: list = None,
 ) -> Table:
     """
     Get an existing table by name, or create it if it doesn't exist.
@@ -384,22 +376,16 @@ def get_or_create_table(
             logging.info(f"📋 Found existing table '{table_name}'")
             return base.table(table_name)
         else:
-            logging.info(
-                f"📋 Table '{table_name}' not found in base. Will create new table."
-            )
+            logging.info(f"📋 Table '{table_name}' not found in base. Will create new table.")
             # Create new table with schema from input data
-            return create_table_from_dataframe(
-                base, table_name, input_df, column_configs
-            )
+            return create_table_from_dataframe(base, table_name, input_df, column_configs)
 
     except Exception as e:
         logging.error(f"❌ Failed to check base schema or create table: {e}")
         raise UserException(f"Failed to access or create table '{table_name}': {e}")
 
 
-def create_table_from_dataframe(
-    base: Base, table_name: str, df: pd.DataFrame, column_configs: List = None
-) -> Table:
+def create_table_from_dataframe(base: Base, table_name: str, df: pd.DataFrame, column_configs: list = None) -> Table:
     """
     Create a new Airtable table based on DataFrame schema.
     NOTE: Table creation via API requires specific permissions and may not be available in all plans.
@@ -447,33 +433,22 @@ def create_table_from_dataframe(
         }
 
         # Check if this is the first field and if it needs type conversion
-        is_first_field = idx == 0
-
-        if is_first_field and col_config.dtype not in VALID_PRIMARY_TYPES:
+        if idx == 0 and col_config.dtype not in VALID_PRIMARY_TYPES:
             # First field must be a valid Airtable primary type
             original_type = col_config.dtype
             field_config["type"] = "singleLineText"
             logging.warning(
-                f"⚠️ First field '{col_config.destination_name}'"
-                f"type '{original_type}' is not valid for Airtable primary field."
+                f"⚠️ First field '{col_config.destination_name}' "
+                f"type '{original_type}' is not valid for Airtable primary field. "
                 f"Converting to 'singleLineText'. Consider using a valid primary type "
                 f"({', '.join(VALID_PRIMARY_TYPES)}) for this field."
             )
-        elif col_config.dtype == "number":
-            precision = detect_number_precision(df, col_config.source_name)
-            precision = precision if precision > 0 else 0
-            field_config["options"] = {"precision": precision}
-        elif col_config.dtype == "currency":
-            precision = detect_number_precision(df, col_config.source_name)
-            precision = precision if precision > 0 else 2
-            field_config["options"] = {"precision": precision}
-        elif col_config.dtype == "percent":
-            precision = detect_number_precision(df, col_config.source_name)
+        elif col_config.dtype in ("number", "currency", "percent"):
+            # Handle numeric types with precision
+            precision = detect_number_precision(df, col_config.source_name, col_config.dtype)
             field_config["options"] = {"precision": precision}
         elif col_config.dtype == "date":
-            field_config["options"] = {
-                "dateFormat": {"name": "iso", "format": "YYYY-MM-DD"}
-            }
+            field_config["options"] = {"dateFormat": {"name": "iso", "format": "YYYY-MM-DD"}}
         elif col_config.dtype == "dateTime":
             field_config["options"] = {
                 "dateFormat": {"name": "iso", "format": "YYYY-MM-DD"},
@@ -482,16 +457,12 @@ def create_table_from_dataframe(
             }
         elif col_config.dtype == "duration":
             field_config["options"] = {"durationFormat": "h:mm:ss"}
-        elif col_config.dtype == "singleSelect":
-            field_config["options"] = {"choices": []}
-        elif col_config.dtype == "multipleSelects":
+        elif col_config.dtype in ("singleSelect", "multipleSelects"):
             field_config["options"] = {"choices": []}
 
         fields.append(field_config)
 
-    logging.info(
-        f"🆕 Creating new table '{table_name}' with fields: {[f['name'] for f in fields]}"
-    )
+    logging.info(f"🆕 Creating new table '{table_name}' with fields: {[f['name'] for f in fields]}")
 
     try:
         created_table = base.create_table(table_name, fields)
@@ -507,7 +478,7 @@ def create_table_from_dataframe(
         )
 
 
-def get_table_schema(table: Table) -> Dict:
+def get_table_schema(table: Table) -> dict:
     """
     Get the current schema/configuration of an existing table using proper table metadata.
 
@@ -527,9 +498,7 @@ def get_table_schema(table: Table) -> Dict:
             "primary_field_id": table_schema.primary_field_id,
         }
 
-        logging.info(
-            f"📋 Retrieved schema for table '{table_schema.name}': {schema['fields']}"
-        )
+        logging.info(f"📋 Retrieved schema for table '{table_schema.name}': {schema['fields']}")
         return schema
 
     except Exception as e:
@@ -537,7 +506,7 @@ def get_table_schema(table: Table) -> Dict:
         raise
 
 
-def compare_schemas(input_df: pd.DataFrame, table_schema: Dict) -> Dict:
+def compare_schemas(input_df: pd.DataFrame, table_schema: dict) -> dict:
     """
     Compare input DataFrame schema with existing table schema.
 
@@ -545,20 +514,15 @@ def compare_schemas(input_df: pd.DataFrame, table_schema: Dict) -> Dict:
         input_df: Input DataFrame
         table_schema: Table schema dict
     Returns:
-        Dict with missing fields, common fields, and update flag
+        Dict with sorted missing_in_table list
     """
     input_columns = set(input_df.columns) - {"recordId"}  # Exclude recordId
     table_fields = set(table_schema.get("fields", []))
 
     missing_in_table = input_columns - table_fields
-    missing_in_input = table_fields - input_columns
-    common_fields = input_columns & table_fields
 
     comparison = {
-        "missing_in_table": list(missing_in_table),
-        "missing_in_input": list(missing_in_input),
-        "common_fields": list(common_fields),
-        "needs_update": len(missing_in_table) > 0,
+        "missing_in_table": sorted(missing_in_table),
     }
 
     return comparison
