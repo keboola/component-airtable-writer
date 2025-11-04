@@ -4,10 +4,11 @@
   "required": ["base_id", "destination"],
   "properties": {
     "base_id": {
-      "enum": [],
       "type": "string",
       "title": "Base ID",
       "format": "select",
+      "description": "The ID of the Airtable base where the table is located.",
+      "propertyOrder": 1,
       "options": {
         "async": {
           "label": "LOAD BASES",
@@ -15,8 +16,7 @@
           "autoload": []
         }
       },
-      "description": "The ID of the Airtable base where the table is located.",
-      "propertyOrder": 1
+      "enum": []
     },
     "destination": {
       "type": "object",
@@ -25,7 +25,6 @@
       "propertyOrder": 2,
       "properties": {
         "table_name": {
-          "enum": [],
           "type": "string",
           "title": "Table Name or Table ID",
           "format": "select",
@@ -38,18 +37,22 @@
               "action": "list_tables",
               "autoload": ["parameters.base_id"]
             }
-          }
+          },
+          "enum": []
         },
         "load_type": {
-          "enum": ["Append", "Full Load", "Incremental Load"],
           "type": "string",
           "title": "Load Type",
           "default": "Append",
           "description": "Full Load: Delete all rows and reload from scratch; Incremental Load: Update existing records using primary keys; Append: Add new records without checking for duplicates.",
-          "propertyOrder": 2
+          "propertyOrder": 2,
+          "enum": ["Append", "Full Load", "Incremental Load"]
         },
         "columns": {
           "type": "array",
+          "title": "Columns",
+          "format": "table",
+          "propertyOrder": 3,
           "items": {
             "type": "object",
             "title": "Column",
@@ -74,6 +77,10 @@
                 "propertyOrder": 3
               },
               "dtype": {
+                "type": "string",
+                "title": "Airtable Field Type",
+                "default": "singleLineText",
+                "propertyOrder": 4,
                 "enum": [
                   "barcode",
                   "checkbox",
@@ -91,17 +98,10 @@
                   "singleLineText",
                   "singleSelect",
                   "url"
-                ],
-                "type": "string",
-                "title": "Airtable Field Type",
-                "default": "singleLineText",
-                "propertyOrder": 4
+                ]
               }
             }
-          },
-          "title": "Columns",
-          "format": "table",
-          "propertyOrder": 3
+          }
         },
         "load_columns_button": {
           "type": "button",
