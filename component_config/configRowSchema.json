@@ -51,12 +51,13 @@
         "columns": {
           "type": "array",
           "title": "Columns",
+          "description":"⚠️ You cannot write into calculated columns from Keboola. Only writable data types are offered.",
           "format": "table",
           "propertyOrder": 3,
           "items": {
             "type": "object",
             "title": "Column",
-            "required": ["source_name", "destination_name"],
+            "required": ["source_name", "destination_name","dtype"],
             "properties": {
               "source_name": {
                 "type": "string",
@@ -81,6 +82,7 @@
                 "title": "Airtable Field Type",
                 "default": "singleLineText",
                 "propertyOrder": 4,
+                "description": "The Airtable field type for this column.",
                 "enum": [
                   "barcode",
                   "checkbox",
@@ -107,6 +109,7 @@
           "type": "button",
           "format": "sync-action",
           "propertyOrder": 4,
+          "description": "Loads columns from storage and attempts to datatype them to Airtable column types.",
           "options": {
             "async": {
               "cache": false,
