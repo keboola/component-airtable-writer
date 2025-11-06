@@ -15,7 +15,7 @@ class ColumnConfig(BaseModel):
     source_name: str
     destination_name: str
     dtype: str
-    pk: bool
+    upsert_key: bool
 
 
 class Destination(BaseModel):

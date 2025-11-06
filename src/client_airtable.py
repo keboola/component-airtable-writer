@@ -65,21 +65,25 @@ class AirtableClient:
             logging.error(f"❌ Failed to check base schema or create table: {e}")
             raise UserException(f"Failed to access or create table '{table_name}': {e}")
 
-    def build_field_mapping(self) -> dict[str, str]:
+    def build_field_mapping(self) -> dict[str, dict]:
         """
         Build field mapping from column configurations.
 
         Returns:
-            Dict mapping source names to destination names
+            Dict mapping source names to dict with destination_name and dtype
+            Example: {"Score": {"destination_name": "Score", "dtype": "singleLineText", "upsert_key": False}}
         """
         column_configs = self.params.destination.columns
         if not column_configs:
             raise UserException("Column configuration is required.")
-        computed_fields = ["Total billed"]
         return {
-            col.source_name: col.destination_name
+            col.source_name: {
+                "destination_name": col.destination_name,
+                "dtype": col.dtype,
+                "upsert_key": col.upsert_key,
+            }
             for col in column_configs
-            if col.destination_name not in computed_fields
+            if col.destination_name
         }
 
     def get_table_schema(self, table: Table) -> dict:
@@ -109,17 +113,23 @@ class AirtableClient:
             logging.error(f"❌ Failed to get table schema: {e}")
             raise
 
-    def compare_schemas(self, input_df: pd.DataFrame, table_schema: dict) -> None:
+    def compare_schemas(self, input_df: pd.DataFrame, table_schema: dict) -> set:
         """
         Compare input DataFrame schema with existing table schema and log any missing columns.
 
         Args:
             input_df: Input DataFrame
             table_schema: Table schema dict
+
+        Returns:
+            Set of column names that exist in both the input and the Airtable table
         """
         input_columns = set(input_df.columns) - {"recordId"}
         table_fields = set(table_schema.get("fields", []))
         missing_in_table = sorted(input_columns - table_fields)
+
+        # Calculate the overlap (columns that exist in both)
+        overlap = input_columns & table_fields
 
         # Log warning if columns are missing in Airtable
         if missing_in_table:
@@ -127,56 +137,40 @@ class AirtableClient:
                 f"⚠️ The following input columns are missing in Airtable and will not be written: {missing_in_table}"
             )
 
+        return overlap
+
     def map_records(self, records: list, field_mapping: dict) -> list:
         """
-        Map input records to Airtable field names using the provided field mapping.
+        Map input records to Airtable field names and convert values to match target field types.
 
         Args:
             records: List of input records (dicts) with only mappable columns
-            field_mapping: Mapping from input column names to Airtable field names
+            field_mapping: Mapping from source names to dict with destination_name, dtype, and upsert_key
 
         Returns:
-            List of tuples: (record_id, mapped_record_dict)
+            List of mapped record dicts
         """
-        column_configs = self.params.destination.columns
-
-        # Build set of numeric PK fields that need string conversion
-        pk_numeric_fields = set()
-        if column_configs:
-            for col in column_configs:
-                if col.pk and col.dtype in ["number", "currency", "percent"]:
-                    pk_numeric_fields.add(col.destination_name)
-
         mapped_records = []
+
         for rec in records:
             mapped = {}
-            raw_id = rec.get("recordId")
 
-            # Improved recordId handling
-            if (
-                raw_id is None
-                or raw_id == ""
-                or (isinstance(raw_id, str) and raw_id.strip().lower() in ["", "nan", "none"])
-                or pd.isna(raw_id)
-            ):
-                record_id = None
-            else:
-                record_id = str(raw_id).strip()
+            for source_col, value in rec.items():
+                field_info = field_mapping[source_col]
+                dest_field = field_info["destination_name"]
+                target_dtype = field_info["dtype"]
 
-            for k, v in rec.items():
-                if k == "recordId":
-                    continue
-                airtable_field = field_mapping[k]
-                # Handle None/NaN values properly
-                if pd.isna(v) or v is None:
-                    mapped[airtable_field] = None
-                # Convert numeric PK values to strings due to API constraints
-                elif airtable_field in pk_numeric_fields and isinstance(v, (int, float)):
-                    mapped[airtable_field] = str(v)
+                # Handle None/NaN
+                if pd.isna(value) or value is None:
+                    mapped[dest_field] = None
+                # Text fields: always convert to string
+                elif target_dtype in ["singleLineText", "multilineText", "email", "url", "phoneNumber"]:
+                    mapped[dest_field] = str(value)
                 else:
-                    mapped[airtable_field] = v
+                    mapped[dest_field] = value
 
-            mapped_records.append((record_id, mapped))
+            mapped_records.append(mapped)
+
         return mapped_records
 
     def process_records_batch(self, table: Table, mapped_records: list, load_type: str) -> None:
@@ -185,7 +179,7 @@ class AirtableClient:
 
         Args:
             table: Airtable table object
-            mapped_records: List of (record_id, record_data) tuples
+            mapped_records: List of mapped record dicts ready for Airtable
             load_type: One of 'Full Load', 'Incremental Load', 'Append'
         """
         log_rows = []
@@ -195,37 +189,38 @@ class AirtableClient:
         total_errors = 0
         BATCH_SIZE = 10
 
-        # For all load types, ignore record_id (Keboola does not persist them)
-        records = [record_data for _, record_data in mapped_records]
-
         if load_type == "Full Load":
             # Table should already be cleared before this is called
-            logging.info(f"Processing {len(records)} records as creates (full load)")
-            create_results = self._process_create_batches(table, records, BATCH_SIZE)
+            logging.info(f"Processing {len(mapped_records)} records as creates (full load)")
+            create_results = self._process_create_batches(table, mapped_records, BATCH_SIZE)
             log_rows.extend(create_results["log_rows"])
             total_created += create_results["created_count"]
             total_errors += create_results["error_count"]
-            total_processed += len(records)
+            total_processed += len(mapped_records)
 
         elif load_type == "Incremental Load":
-            upsert_key_fields = self.get_primary_key_fields()
+            upsert_key_fields = self.get_upsert_key_fields()
+            if not upsert_key_fields:
+                raise UserException(
+                    "Incremental load requires at least one upsert key field to be set in the configuration."
+                )
             logging.info(
-                f"Processing {len(records)} records as upserts (Incremental Load) using keys: {upsert_key_fields}"
+                f"Processing {len(mapped_records)} records as incremental upsert using keys: {upsert_key_fields}"
             )
-            upsert_results = self._process_upsert_batches(table, records, upsert_key_fields, BATCH_SIZE)
+            upsert_results = self._process_upsert_batches(table, mapped_records, upsert_key_fields, BATCH_SIZE)
             log_rows.extend(upsert_results["log_rows"])
             total_created += upsert_results["created_count"]
             total_updated += upsert_results.get("updated_count", 0)
             total_errors += upsert_results["error_count"]
-            total_processed += len(records)
+            total_processed += len(mapped_records)
 
         elif load_type == "Append":
-            logging.info(f"Processing {len(records)} records as creates (Append mode)")
-            create_results = self._process_create_batches(table, records, BATCH_SIZE)
+            logging.info(f"Processing {len(mapped_records)} records as creates (Append mode)")
+            create_results = self._process_create_batches(table, mapped_records, BATCH_SIZE)
             log_rows.extend(create_results["log_rows"])
             total_created += create_results["created_count"]
             total_errors += create_results["error_count"]
-            total_processed += len(records)
+            total_processed += len(mapped_records)
 
         else:
             raise UserException(f"Unknown load_type: {load_type}")
@@ -259,17 +254,17 @@ class AirtableClient:
             logging.error(f"❌ Failed to clear table: {e}")
             raise
 
-    def get_primary_key_fields(self) -> list:
+    def get_upsert_key_fields(self) -> list:
         """
-        Get the list of primary key field names from column configurations.
+        Get the list of upsert key field names from column configurations.
 
         Returns:
-            List of primary key field names
+            List of upsert key field names
         """
         column_configs = self.params.destination.columns
         if not column_configs:
             return []
-        return [col.destination_name for col in column_configs if col.pk]
+        return [col.destination_name for col in column_configs if col.upsert_key]
 
     def _process_create_batches(self, table: Table, records: list, batch_size: int) -> dict:
         """
@@ -290,8 +285,7 @@ class AirtableClient:
             batch = records[i : i + batch_size]
 
             try:
-                # Use pyairtable's batch_create method with typecast for auto-conversion
-                created_records = table.batch_create(batch, typecast=True)
+                created_records = table.batch_create(batch)
 
                 for record in created_records:
                     record_id = record["id"]
@@ -359,7 +353,7 @@ class AirtableClient:
             try:
                 # Use Airtable's native upsert via batch_upsert
                 upsert_batch = [{"fields": record} for record in batch]
-                response = table.batch_upsert(upsert_batch, key_fields=upsert_key_fields, typecast=True)
+                response = table.batch_upsert(upsert_batch, key_fields=upsert_key_fields)
 
                 # Handle upsert response
                 for record in response.get("records", []):
@@ -418,7 +412,6 @@ class AirtableClient:
     ) -> Table:
         """
         Create a new Airtable table based on DataFrame schema.
-        NOTE: Table creation via API requires specific permissions and may not be available in all plans.
 
         Args:
             base: Airtable Base object
@@ -434,42 +427,14 @@ class AirtableClient:
                 "Please configure columns using the 'Load Columns' button in the UI."
             )
 
-        # Airtable requires the first field to be one of: singleLineText, email, url, phoneNumber, autoNumber
-        VALID_PRIMARY_TYPES = [
-            "singleLineText",
-            "email",
-            "url",
-            "phoneNumber",
-            "autoNumber",
-        ]
-
-        # Reorder fields: Put PK fields first (if any), then remaining fields
-        pk_configs = [col for col in column_configs if col.pk]
-        non_pk_configs = [col for col in column_configs if not col.pk]
-        ordered_configs = (pk_configs + non_pk_configs) if pk_configs else column_configs
-
-        if pk_configs:
-            pk_names = [col.destination_name for col in pk_configs]
-            logging.info(f"📌 Reordering fields: PK fields {pk_names} will be placed first")
-
         fields = []
-        for idx, col_config in enumerate(ordered_configs):
+        for col_config in column_configs:
             field_config = {
                 "name": col_config.destination_name,
                 "type": col_config.dtype,
             }
 
-            # Check if this is the first field and if it needs type conversion
-            if idx == 0 and col_config.dtype not in VALID_PRIMARY_TYPES:
-                original_type = col_config.dtype
-                field_config["type"] = "singleLineText"
-                logging.warning(
-                    f"⚠️ First field '{col_config.destination_name}' "
-                    f"type '{original_type}' is not valid for Airtable primary field. "
-                    f"Converting to 'singleLineText'. Consider using a valid primary type "
-                    f"({', '.join(VALID_PRIMARY_TYPES)}) for this field."
-                )
-            elif col_config.dtype in ("number", "currency", "percent"):
+            if col_config.dtype in ("number", "currency", "percent"):
                 precision = AirtableClient._detect_number_precision(input_df, col_config.source_name, col_config.dtype)
                 field_config["options"] = {"precision": precision}
             elif col_config.dtype == "date":

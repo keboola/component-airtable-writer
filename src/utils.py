@@ -71,7 +71,7 @@ def get_sapi_column_definition(table_id: str, storage_url: str, storage_token: s
                 source_name=col_name,
                 destination_name=col_name,
                 dtype=col_info["dtype"],
-                pk=col_name in primary_keys,
+                upsert_key=col_name in primary_keys,
             ).model_dump()
         )
     return columns
