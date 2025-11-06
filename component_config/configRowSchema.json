@@ -51,13 +51,13 @@
         "columns": {
           "type": "array",
           "title": "Columns",
-          "description":"⚠️ You cannot write into calculated columns from Keboola. Only writable data types are offered.",
+          "description": "⚠️ You cannot write into calculated columns from Keboola. Only writable data types are offered.",
           "format": "table",
           "propertyOrder": 3,
           "items": {
             "type": "object",
             "title": "Column",
-            "required": ["source_name", "destination_name","dtype"],
+            "required": ["source_name", "destination_name", "dtype"],
             "properties": {
               "source_name": {
                 "type": "string",
@@ -116,14 +116,6 @@
               "action": "return_columns_data"
             }
           }
-        },
-        "debug": {
-          "type": "boolean",
-          "title": "Debug mode",
-          "format": "checkbox",
-          "default": false,
-          "description": "If enabled, the component will produce detailed logs",
-          "propertyOrder": 5
         }
       }
     },
@@ -132,6 +124,14 @@
       "options": {
         "hidden": true
       }
-    }
+    },
+      "debug": {
+        "type": "boolean",
+        "title": "Debug mode",
+        "format": "checkbox",
+        "default": false,
+        "description": "If enabled, the component will produce detailed logs",
+        "propertyOrder": 5
+      }
   }
 }
