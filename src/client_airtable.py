@@ -12,7 +12,7 @@ class AirtableClient:
     Encapsulates all Airtable operations including table management, schema operations, and data processing.
     """
 
-    def __init__(self, api: Api, params):
+    def __init__(self, params):
         """
         Initialize the Airtable client.
 
@@ -20,7 +20,7 @@ class AirtableClient:
             api: Airtable API instance
             params: Configuration parameters containing base_id, destination settings, etc.
         """
-        self.api = api
+        self.api = Api(params.api_token)
         self.params = params
 
     def test_connection(self) -> None:
@@ -301,8 +301,24 @@ class AirtableClient:
                 logging.debug(f"✅ Created batch of {len(batch)} records")
 
             except Exception as e:
+                error_str = str(e)
+                
+                # Check for computed field error
+                if "INVALID_VALUE_FOR_COLUMN" in error_str and "field is computed" in error_str:
+                    field_name = "unknown"
+                    if 'Field "' in error_str:
+                        start = error_str.index('Field "') + len('Field "')
+                        end = error_str.index('"', start)
+                        field_name = error_str[start:end]
+    
+                    raise UserException(
+                        f"You cannot write to a computed field {field_name}."
+                        f"Computed fields are automatically calculated by Airtable and cannot accept values. "
+                        f"Please remove this field from your column mapping or exclude it from the input data."
+                    )
+                
                 logging.error("Batch failed to insert records. Use debug for more info.")
-                logging.debug(f"Batch fail details: {str(e)}")
+                logging.debug(f"Batch fail details: {error_str}")
 
                 # Log error for each record in the failed batch
                 for j, record in enumerate(batch):
@@ -356,20 +372,37 @@ class AirtableClient:
                 updated_records = response.get("updatedRecords", [])
                 created_count += len(created_records)
                 updated_count += len(updated_records)
-                logging.debug(f"✅ Upserted batch: {len(created_records)} created, " f"{len(updated_records)} updated")
+                logging.debug(f"✅ Upserted batch: {len(created_records)} created, {len(updated_records)} updated")
 
             except Exception as e:
-                if "INVALID_VALUE_FOR_COLUMN" in str(e):
+                error_str = str(e)
+            
+                # Check for computed field error
+                if "INVALID_VALUE_FOR_COLUMN" in error_str and "field is computed" in error_str:
+                    field_name = "unknown"
+                    if 'Field "' in error_str:
+                        start = error_str.index('Field "') + len('Field "')
+                        end = error_str.index('"', start)
+                        field_name = error_str[start:end]
+    
+                    raise UserException(
+                        f"Cannot write to computed field '{field_name}'. "
+                        f"Computed fields are automatically calculated by Airtable and cannot accept values. "
+                        f"Please remove this field from your column mapping or exclude it from the input data."
+                    )
+            
+                # Check for duplicate key error
+                if "INVALID_VALUE_FOR_COLUMN" in error_str:
                     raise UserException(
                         "Airtable upsert failed: The upsert key fields do not uniquely identify records in the table. "
                         "Please ensure the combination of upsert key fields is unique for all records."
-                        f"Airtable error: {str(e)}"
+                        f"Airtable error: {error_str}"
                     )
-                if "INVALID_RECORDS" in str(e):
+                if "INVALID_RECORDS" in error_str:
                     raise UserException(
                         "Airtable upsert failed: Your input data contains duplicate values for the upsert key. "
                         "Please ensure there are no duplicate records for the upsert key fields in your input data.\n"
-                        f"Airtable error: {str(e)}"
+                            f"Airtable error: {error_str}"
                     )
 
         return {

@@ -15,8 +15,7 @@ class Component(ComponentBase):
     def __init__(self):
         super().__init__()
         self.params = Configuration(**self.configuration.parameters)
-        api = Api(self.params.api_token)
-        self.airtable_client = AirtableClient(api, self.params)
+        self.airtable_client = AirtableClient(self.params)
 
     def run(self):
         # Get input data first
@@ -25,7 +24,6 @@ class Component(ComponentBase):
             raise UserException("No input tables found")
         input_table_path = input_tables[0].full_path
         df = pd.read_csv(input_table_path)
-        logging.info(f"Loaded input data: {len(df)} rows")
 
         try:
             # Get or create table using the client
