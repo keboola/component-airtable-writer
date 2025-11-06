@@ -51,7 +51,7 @@
         "columns": {
           "type": "array",
           "title": "Columns",
-          "description": "⚠️ You cannot write into calculated columns from Keboola. Only writable data types are offered.",
+          "description": "⚠️ Writing to calculated columns in Airtable is not supported. Only writable data types are shown. The Load Columns button auto-converts types only for natively typed tables.",
           "format": "table",
           "propertyOrder": 3,
           "items": {
