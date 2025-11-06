@@ -4,7 +4,6 @@ import pandas as pd
 from keboola.component.base import ComponentBase, sync_action
 from keboola.component.exceptions import UserException
 from keboola.component.sync_actions import MessageType, SelectElement, ValidationResult
-from pyairtable import Api
 
 from client_airtable import AirtableClient
 from configuration import Configuration

@@ -124,8 +124,7 @@ class AirtableClient:
         # Log warning if columns are missing in Airtable
         if missing_in_table:
             logging.warning(
-                f"⚠️ The following input columns are missing in Airtable "
-                f"and will not be written: {missing_in_table}"
+                f"⚠️ The following input columns are missing in Airtable and will not be written: {missing_in_table}"
             )
 
     def map_records(self, records: list, field_mapping: dict) -> list:
@@ -302,7 +301,7 @@ class AirtableClient:
 
             except Exception as e:
                 error_str = str(e)
-                
+
                 # Check for computed field error
                 if "INVALID_VALUE_FOR_COLUMN" in error_str and "field is computed" in error_str:
                     field_name = "unknown"
@@ -310,13 +309,13 @@ class AirtableClient:
                         start = error_str.index('Field "') + len('Field "')
                         end = error_str.index('"', start)
                         field_name = error_str[start:end]
-    
+
                     raise UserException(
-                        f"You cannot write to a computed field {field_name}."
-                        f"Computed fields are automatically calculated by Airtable and cannot accept values. "
-                        f"Please remove this field from your column mapping or exclude it from the input data."
+                        f"You cannot write to a computed field {field_name}. "
+                        "Computed fields are automatically calculated by Airtable and cannot accept values. "
+                        "Please remove this field from your column mapping or exclude it from the input data."
                     )
-                
+
                 logging.error("Batch failed to insert records. Use debug for more info.")
                 logging.debug(f"Batch fail details: {error_str}")
 
@@ -376,7 +375,7 @@ class AirtableClient:
 
             except Exception as e:
                 error_str = str(e)
-            
+
                 # Check for computed field error
                 if "INVALID_VALUE_FOR_COLUMN" in error_str and "field is computed" in error_str:
                     field_name = "unknown"
@@ -384,13 +383,13 @@ class AirtableClient:
                         start = error_str.index('Field "') + len('Field "')
                         end = error_str.index('"', start)
                         field_name = error_str[start:end]
-    
+
                     raise UserException(
                         f"Cannot write to computed field '{field_name}'. "
                         f"Computed fields are automatically calculated by Airtable and cannot accept values. "
                         f"Please remove this field from your column mapping or exclude it from the input data."
                     )
-            
+
                 # Check for duplicate key error
                 if "INVALID_VALUE_FOR_COLUMN" in error_str:
                     raise UserException(
@@ -402,7 +401,7 @@ class AirtableClient:
                     raise UserException(
                         "Airtable upsert failed: Your input data contains duplicate values for the upsert key. "
                         "Please ensure there are no duplicate records for the upsert key fields in your input data.\n"
-                            f"Airtable error: {error_str}"
+                        f"Airtable error: {error_str}"
                     )
 
         return {
