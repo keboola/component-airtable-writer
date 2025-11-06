@@ -82,7 +82,6 @@
                 "title": "Airtable Field Type",
                 "default": "singleLineText",
                 "propertyOrder": 4,
-                "description": "The Airtable field type for this column.",
                 "enum": [
                   "barcode",
                   "checkbox",
