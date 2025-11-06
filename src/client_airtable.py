@@ -403,7 +403,8 @@ class AirtableClient:
                         "Please ensure there are no duplicate records for the upsert key fields in your input data.\n"
                         f"Airtable error: {error_str}"
                     )
-
+                logging.error("Batch failed to upsert records. Use debug for more info.")
+                
         return {
             "log_rows": log_rows,
             "created_count": created_count,
