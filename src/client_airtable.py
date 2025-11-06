@@ -290,8 +290,7 @@ class AirtableClient:
             batch = records[i : i + batch_size]
 
             try:
-                # Use pyairtable's batch_create method with typecast for auto-conversion
-                created_records = table.batch_create(batch, typecast=True)
+                created_records = table.batch_create(batch)
 
                 for record in created_records:
                     record_id = record["id"]
@@ -359,7 +358,7 @@ class AirtableClient:
             try:
                 # Use Airtable's native upsert via batch_upsert
                 upsert_batch = [{"fields": record} for record in batch]
-                response = table.batch_upsert(upsert_batch, key_fields=upsert_key_fields, typecast=True)
+                response = table.batch_upsert(upsert_batch, key_fields=upsert_key_fields)
 
                 # Handle upsert response
                 for record in response.get("records", []):
