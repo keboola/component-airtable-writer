@@ -71,20 +71,19 @@ class AirtableClient:
 
         Returns:
             Dict mapping source names to dict with destination_name and dtype
-            Example: {"Score": {"destination_name": "Score", "dtype": "singleLineText", "pk": False}}
+            Example: {"Score": {"destination_name": "Score", "dtype": "singleLineText", "upsert_key": False}}
         """
         column_configs = self.params.destination.columns
         if not column_configs:
             raise UserException("Column configuration is required.")
-        computed_fields = ["Total billed"]
         return {
             col.source_name: {
                 "destination_name": col.destination_name,
                 "dtype": col.dtype,
-                "pk": col.pk,
+                "upsert_key": col.upsert_key,
             }
             for col in column_configs
-            if col.destination_name not in computed_fields
+            if col.destination_name
         }
 
     def get_table_schema(self, table: Table) -> dict:
@@ -146,7 +145,7 @@ class AirtableClient:
 
         Args:
             records: List of input records (dicts) with only mappable columns
-            field_mapping: Mapping from source names to dict with destination_name, dtype, and pk
+            field_mapping: Mapping from source names to dict with destination_name, dtype, and upsert_key
 
         Returns:
             List of mapped record dicts
@@ -160,7 +159,6 @@ class AirtableClient:
                 field_info = field_mapping[source_col]
                 dest_field = field_info["destination_name"]
                 target_dtype = field_info["dtype"]
-                is_pk = field_info["pk"]
 
                 # Handle None/NaN
                 if pd.isna(value) or value is None:
@@ -168,10 +166,6 @@ class AirtableClient:
                 # Text fields: always convert to string
                 elif target_dtype in ["singleLineText", "multilineText", "email", "url", "phoneNumber"]:
                     mapped[dest_field] = str(value)
-                # Numeric PK fields must be strings (Airtable API requirement)
-                elif is_pk and target_dtype in ["number", "currency", "percent"]:
-                    mapped[dest_field] = str(value)
-                # Everything else: pass through as-is
                 else:
                     mapped[dest_field] = value
 
@@ -205,7 +199,11 @@ class AirtableClient:
             total_processed += len(mapped_records)
 
         elif load_type == "Incremental Load":
-            upsert_key_fields = self.get_primary_key_fields()
+            upsert_key_fields = self.get_upsert_key_fields()
+            if not upsert_key_fields:
+                raise UserException(
+                    "Incremental load requires at least one upsert key field to be set in the configuration."
+                )
             logging.info(
                 f"Processing {len(mapped_records)} records as incremental upsert using keys: {upsert_key_fields}"
             )
@@ -256,17 +254,17 @@ class AirtableClient:
             logging.error(f"❌ Failed to clear table: {e}")
             raise
 
-    def get_primary_key_fields(self) -> list:
+    def get_upsert_key_fields(self) -> list:
         """
-        Get the list of primary key field names from column configurations.
+        Get the list of upsert key field names from column configurations.
 
         Returns:
-            List of primary key field names
+            List of upsert key field names
         """
         column_configs = self.params.destination.columns
         if not column_configs:
             return []
-        return [col.destination_name for col in column_configs if col.pk]
+        return [col.destination_name for col in column_configs if col.upsert_key]
 
     def _process_create_batches(self, table: Table, records: list, batch_size: int) -> dict:
         """
@@ -414,7 +412,6 @@ class AirtableClient:
     ) -> Table:
         """
         Create a new Airtable table based on DataFrame schema.
-        NOTE: Table creation via API requires specific permissions and may not be available in all plans.
 
         Args:
             base: Airtable Base object
@@ -430,42 +427,14 @@ class AirtableClient:
                 "Please configure columns using the 'Load Columns' button in the UI."
             )
 
-        # Airtable requires the first field to be one of: singleLineText, email, url, phoneNumber, autoNumber
-        VALID_PRIMARY_TYPES = [
-            "singleLineText",
-            "email",
-            "url",
-            "phoneNumber",
-            "autoNumber",
-        ]
-
-        # Reorder fields: Put PK fields first (if any), then remaining fields
-        pk_configs = [col for col in column_configs if col.pk]
-        non_pk_configs = [col for col in column_configs if not col.pk]
-        ordered_configs = (pk_configs + non_pk_configs) if pk_configs else column_configs
-
-        if pk_configs:
-            pk_names = [col.destination_name for col in pk_configs]
-            logging.info(f"📌 Reordering fields: PK fields {pk_names} will be placed first")
-
         fields = []
-        for idx, col_config in enumerate(ordered_configs):
+        for col_config in column_configs:
             field_config = {
                 "name": col_config.destination_name,
                 "type": col_config.dtype,
             }
 
-            # Check if this is the first field and if it needs type conversion
-            if idx == 0 and col_config.dtype not in VALID_PRIMARY_TYPES:
-                original_type = col_config.dtype
-                field_config["type"] = "singleLineText"
-                logging.warning(
-                    f"⚠️ First field '{col_config.destination_name}' "
-                    f"type '{original_type}' is not valid for Airtable primary field. "
-                    f"Converting to 'singleLineText'. Consider using a valid primary type "
-                    f"({', '.join(VALID_PRIMARY_TYPES)}) for this field."
-                )
-            elif col_config.dtype in ("number", "currency", "percent"):
+            if col_config.dtype in ("number", "currency", "percent"):
                 precision = AirtableClient._detect_number_precision(input_df, col_config.source_name, col_config.dtype)
                 field_config["options"] = {"precision": precision}
             elif col_config.dtype == "date":

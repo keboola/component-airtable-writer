@@ -44,7 +44,7 @@
           "type": "string",
           "title": "Load Type",
           "default": "Append",
-          "description": "Full Load: Delete all rows and reload from scratch; Incremental Load: Update existing records using primary keys; Append: Add new records without checking for duplicates.",
+          "description": "Full Load: Delete all rows and reload from scratch; Incremental Load: Update existing records using upsert keys; Append: Add new records without checking for duplicates.",
           "propertyOrder": 2,
           "enum": ["Append", "Full Load", "Incremental Load"]
         },
@@ -70,9 +70,9 @@
                 "title": "Destination Column",
                 "propertyOrder": 2
               },
-              "pk": {
+              "upsert_key": {
                 "type": "boolean",
-                "title": "Primary Key",
+                "title": "Upsert Key",
                 "format": "checkbox",
                 "default": false,
                 "propertyOrder": 3

@@ -50,13 +50,6 @@ class Component(ComponentBase):
             # Handle Full Load mode
             if load_type == "Full Load":
                 self.airtable_client.clear_table_for_full_load(table)
-            # Validate Incremental Load has primary keys
-            elif load_type == "Incremental Load":
-                upsert_key_fields = self.airtable_client.get_primary_key_fields()
-                if not upsert_key_fields:
-                    raise UserException(
-                        "Incremental load requires at least one primary key field to be set in the configuration."
-                    )
 
             # Process records using the client
             self.airtable_client.process_records_batch(table, mapped_records, load_type)
