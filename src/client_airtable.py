@@ -65,19 +65,24 @@ class AirtableClient:
             logging.error(f"❌ Failed to check base schema or create table: {e}")
             raise UserException(f"Failed to access or create table '{table_name}': {e}")
 
-    def build_field_mapping(self) -> dict[str, str]:
+    def build_field_mapping(self) -> dict[str, dict]:
         """
         Build field mapping from column configurations.
 
         Returns:
-            Dict mapping source names to destination names
+            Dict mapping source names to dict with destination_name and dtype
+            Example: {"Score": {"destination_name": "Score", "dtype": "singleLineText", "pk": False}}
         """
         column_configs = self.params.destination.columns
         if not column_configs:
             raise UserException("Column configuration is required.")
         computed_fields = ["Total billed"]
         return {
-            col.source_name: col.destination_name
+            col.source_name: {
+                "destination_name": col.destination_name,
+                "dtype": col.dtype,
+                "pk": col.pk,
+            }
             for col in column_configs
             if col.destination_name not in computed_fields
         }
@@ -109,74 +114,69 @@ class AirtableClient:
             logging.error(f"❌ Failed to get table schema: {e}")
             raise
 
-    def compare_schemas(self, input_df: pd.DataFrame, table_schema: dict) -> None:
+    def compare_schemas(self, input_df: pd.DataFrame, table_schema: dict) -> set:
         """
         Compare input DataFrame schema with existing table schema and log any missing columns.
 
         Args:
             input_df: Input DataFrame
             table_schema: Table schema dict
+            
+        Returns:
+            Set of column names that exist in both the input and the Airtable table
         """
         input_columns = set(input_df.columns) - {"recordId"}
         table_fields = set(table_schema.get("fields", []))
         missing_in_table = sorted(input_columns - table_fields)
+        
+        # Calculate the overlap (columns that exist in both)
+        overlap = input_columns & table_fields
 
         # Log warning if columns are missing in Airtable
         if missing_in_table:
             logging.warning(
                 f"⚠️ The following input columns are missing in Airtable and will not be written: {missing_in_table}"
             )
+        
+        return overlap
 
     def map_records(self, records: list, field_mapping: dict) -> list:
         """
-        Map input records to Airtable field names using the provided field mapping.
+        Map input records to Airtable field names and convert values to match target field types.
 
         Args:
             records: List of input records (dicts) with only mappable columns
-            field_mapping: Mapping from input column names to Airtable field names
+            field_mapping: Mapping from source names to dict with destination_name, dtype, and pk
 
         Returns:
-            List of tuples: (record_id, mapped_record_dict)
+            List of mapped record dicts
         """
-        column_configs = self.params.destination.columns
-
-        # Build set of numeric PK fields that need string conversion
-        pk_numeric_fields = set()
-        if column_configs:
-            for col in column_configs:
-                if col.pk and col.dtype in ["number", "currency", "percent"]:
-                    pk_numeric_fields.add(col.destination_name)
-
         mapped_records = []
+        
         for rec in records:
             mapped = {}
-            raw_id = rec.get("recordId")
-
-            # Improved recordId handling
-            if (
-                raw_id is None
-                or raw_id == ""
-                or (isinstance(raw_id, str) and raw_id.strip().lower() in ["", "nan", "none"])
-                or pd.isna(raw_id)
-            ):
-                record_id = None
-            else:
-                record_id = str(raw_id).strip()
-
-            for k, v in rec.items():
-                if k == "recordId":
-                    continue
-                airtable_field = field_mapping[k]
-                # Handle None/NaN values properly
-                if pd.isna(v) or v is None:
-                    mapped[airtable_field] = None
-                # Convert numeric PK values to strings due to API constraints
-                elif airtable_field in pk_numeric_fields and isinstance(v, (int, float)):
-                    mapped[airtable_field] = str(v)
+            
+            for source_col, value in rec.items():
+                field_info = field_mapping[source_col]
+                dest_field = field_info["destination_name"]
+                target_dtype = field_info["dtype"]
+                is_pk = field_info["pk"]
+                
+                # Handle None/NaN
+                if pd.isna(value) or value is None:
+                    mapped[dest_field] = None
+                # Text fields: always convert to string
+                elif target_dtype in ["singleLineText", "multilineText", "email", "url", "phoneNumber"]:
+                    mapped[dest_field] = str(value)
+                # Numeric PK fields must be strings (Airtable API requirement)
+                elif is_pk and target_dtype in ["number", "currency", "percent"]:
+                    mapped[dest_field] = str(value)
+                # Everything else: pass through as-is
                 else:
-                    mapped[airtable_field] = v
-
-            mapped_records.append((record_id, mapped))
+                    mapped[dest_field] = value
+            
+            mapped_records.append(mapped)
+        
         return mapped_records
 
     def process_records_batch(self, table: Table, mapped_records: list, load_type: str) -> None:
@@ -185,7 +185,7 @@ class AirtableClient:
 
         Args:
             table: Airtable table object
-            mapped_records: List of (record_id, record_data) tuples
+            mapped_records: List of mapped record dicts ready for Airtable
             load_type: One of 'Full Load', 'Incremental Load', 'Append'
         """
         log_rows = []
@@ -195,37 +195,34 @@ class AirtableClient:
         total_errors = 0
         BATCH_SIZE = 10
 
-        # For all load types, ignore record_id (Keboola does not persist them)
-        records = [record_data for _, record_data in mapped_records]
-
         if load_type == "Full Load":
             # Table should already be cleared before this is called
-            logging.info(f"Processing {len(records)} records as creates (full load)")
-            create_results = self._process_create_batches(table, records, BATCH_SIZE)
+            logging.info(f"Processing {len(mapped_records)} records as creates (full load)")
+            create_results = self._process_create_batches(table, mapped_records, BATCH_SIZE)
             log_rows.extend(create_results["log_rows"])
             total_created += create_results["created_count"]
             total_errors += create_results["error_count"]
-            total_processed += len(records)
+            total_processed += len(mapped_records)
 
         elif load_type == "Incremental Load":
             upsert_key_fields = self.get_primary_key_fields()
             logging.info(
-                f"Processing {len(records)} records as upserts (Incremental Load) using keys: {upsert_key_fields}"
+                f"Processing {len(mapped_records)} records as upserts (Incremental Load) using keys: {upsert_key_fields}"
             )
-            upsert_results = self._process_upsert_batches(table, records, upsert_key_fields, BATCH_SIZE)
+            upsert_results = self._process_upsert_batches(table, mapped_records, upsert_key_fields, BATCH_SIZE)
             log_rows.extend(upsert_results["log_rows"])
             total_created += upsert_results["created_count"]
             total_updated += upsert_results.get("updated_count", 0)
             total_errors += upsert_results["error_count"]
-            total_processed += len(records)
+            total_processed += len(mapped_records)
 
         elif load_type == "Append":
-            logging.info(f"Processing {len(records)} records as creates (Append mode)")
-            create_results = self._process_create_batches(table, records, BATCH_SIZE)
+            logging.info(f"Processing {len(mapped_records)} records as creates (Append mode)")
+            create_results = self._process_create_batches(table, mapped_records, BATCH_SIZE)
             log_rows.extend(create_results["log_rows"])
             total_created += create_results["created_count"]
             total_errors += create_results["error_count"]
-            total_processed += len(records)
+            total_processed += len(mapped_records)
 
         else:
             raise UserException(f"Unknown load_type: {load_type}")

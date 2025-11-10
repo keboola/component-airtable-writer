@@ -33,13 +33,14 @@ class Component(ComponentBase):
             # Build field mapping for the table
             field_mapping = self.airtable_client.build_field_mapping()
 
-            # Only use columns present in the mapping
-            mappable_columns = [col for col in df.columns if col in field_mapping]
+            # Compare schemas and get the overlap (columns that exist in both input and Airtable)
+            table_schema = self.airtable_client.get_table_schema(table)
+            valid_columns = self.airtable_client.compare_schemas(df, table_schema)
+            
+            # Only use columns present in both the mapping and Airtable table
+            mappable_columns = [col for col in df.columns if col in field_mapping and col in valid_columns]
             filtered_df = df[mappable_columns]
             logging.info(f"📊 Processing {len(mappable_columns)} columns: {mappable_columns}")
-
-            # Compare schemas and log any differences
-            self.airtable_client.compare_schemas(df, self.airtable_client.get_table_schema(table))
 
             # Process the records with enhanced batch functionality
             records = filtered_df.to_dict(orient="records")
