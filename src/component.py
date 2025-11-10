@@ -1,14 +1,15 @@
 import logging
-
-import pandas as pd
 from keboola.component.base import ComponentBase, sync_action
 from keboola.component.exceptions import UserException
 from keboola.component.sync_actions import MessageType, SelectElement, ValidationResult
-
+import fireducks.pandas as pd
 from client_airtable import AirtableClient
 from configuration import Configuration
 from utils import get_sapi_column_definition, map_to_airtable_type
 
+# FireDucks has very verbose logging, if debug flag = true.
+logging.getLogger('fireducks').setLevel(logging.INFO)
+logging.getLogger('firefw').setLevel(logging.INFO)
 
 class Component(ComponentBase):
     def __init__(self):
