@@ -36,7 +36,7 @@ class Component(ComponentBase):
             # Compare schemas and get the overlap (columns that exist in both input and Airtable)
             table_schema = self.airtable_client.get_table_schema(table)
             valid_columns = self.airtable_client.compare_schemas(df, table_schema)
-            
+
             # Only use columns present in both the mapping and Airtable table
             mappable_columns = [col for col in df.columns if col in field_mapping and col in valid_columns]
             filtered_df = df[mappable_columns]

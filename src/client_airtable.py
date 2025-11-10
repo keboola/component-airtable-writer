@@ -121,14 +121,14 @@ class AirtableClient:
         Args:
             input_df: Input DataFrame
             table_schema: Table schema dict
-            
+
         Returns:
             Set of column names that exist in both the input and the Airtable table
         """
         input_columns = set(input_df.columns) - {"recordId"}
         table_fields = set(table_schema.get("fields", []))
         missing_in_table = sorted(input_columns - table_fields)
-        
+
         # Calculate the overlap (columns that exist in both)
         overlap = input_columns & table_fields
 
@@ -137,7 +137,7 @@ class AirtableClient:
             logging.warning(
                 f"⚠️ The following input columns are missing in Airtable and will not be written: {missing_in_table}"
             )
-        
+
         return overlap
 
     def map_records(self, records: list, field_mapping: dict) -> list:
@@ -152,16 +152,16 @@ class AirtableClient:
             List of mapped record dicts
         """
         mapped_records = []
-        
+
         for rec in records:
             mapped = {}
-            
+
             for source_col, value in rec.items():
                 field_info = field_mapping[source_col]
                 dest_field = field_info["destination_name"]
                 target_dtype = field_info["dtype"]
                 is_pk = field_info["pk"]
-                
+
                 # Handle None/NaN
                 if pd.isna(value) or value is None:
                     mapped[dest_field] = None
@@ -174,9 +174,9 @@ class AirtableClient:
                 # Everything else: pass through as-is
                 else:
                     mapped[dest_field] = value
-            
+
             mapped_records.append(mapped)
-        
+
         return mapped_records
 
     def process_records_batch(self, table: Table, mapped_records: list, load_type: str) -> None:
@@ -207,7 +207,7 @@ class AirtableClient:
         elif load_type == "Incremental Load":
             upsert_key_fields = self.get_primary_key_fields()
             logging.info(
-                f"Processing {len(mapped_records)} records as upserts (Incremental Load) using keys: {upsert_key_fields}"
+                f"Processing {len(mapped_records)} records as incremental upsert using keys: {upsert_key_fields}"
             )
             upsert_results = self._process_upsert_batches(table, mapped_records, upsert_key_fields, BATCH_SIZE)
             log_rows.extend(upsert_results["log_rows"])
