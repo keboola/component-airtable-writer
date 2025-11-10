@@ -1,7 +1,6 @@
 import logging
 from datetime import datetime
-
-import pandas as pd
+import fireducks.pandas as pd
 from keboola.component.exceptions import UserException
 from pyairtable import Api, Base, Table
 
