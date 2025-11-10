@@ -8,8 +8,9 @@ from configuration import Configuration
 from utils import get_sapi_column_definition, map_to_airtable_type
 
 # FireDucks has very verbose logging, if debug flag = true.
-logging.getLogger('fireducks').setLevel(logging.INFO)
-logging.getLogger('firefw').setLevel(logging.INFO)
+logging.getLogger("fireducks").setLevel(logging.INFO)
+logging.getLogger("firefw").setLevel(logging.INFO)
+
 
 class Component(ComponentBase):
     def __init__(self):
