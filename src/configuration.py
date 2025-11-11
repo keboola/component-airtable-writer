@@ -1,6 +1,4 @@
 from enum import Enum
-from typing import Optional
-
 from keboola.component.exceptions import UserException
 from pydantic import BaseModel, Field, ValidationError, model_validator
 
@@ -19,7 +17,7 @@ class ColumnConfig(BaseModel):
 
 
 class Destination(BaseModel):
-    table_name: Optional[str] = Field(alias="table_name", default="")
+    table_name: str = Field(alias="table_name", default="")
     columns: list[ColumnConfig] = Field(default_factory=list)
     load_type: LoadType = Field(default=LoadType.append)
 
