@@ -1,18 +1,20 @@
 {
   "type": "object",
-  "title": "extractor configuration",
+  "title": "Connection",
   "required": [
-    "print_hello"
+    "#api_token"
   ],
   "properties": {
-    "print_hello": {
-      "type": "boolean",
-      "title": "Print Hello",
+    "#api_token": {
+      "type": "string",
+      "title": "API Token",
+      "format": "password",
+      "description": "Valid PAT token. Should have data.records:write. Optionally schema.bases:write if adding or editing new tables via component.",
       "propertyOrder": 1
     },
-    "debug": {
-      "type": "boolean",
-      "title": "Debug",
+    "test_connection": {
+      "type": "button",
+      "format": "test-connection",
       "propertyOrder": 2
     }
   }

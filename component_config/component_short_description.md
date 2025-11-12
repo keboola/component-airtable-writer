@@ -1,1 +1,1 @@
-TODO
+Airtable is a cloud-based platform that combines the simplicity of spreadsheets with the power of databases to help teams organize, track, and collaborate on their work.

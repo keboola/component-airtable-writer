@@ -1,1 +1,137 @@
-{}
+{
+  "type": "object",
+  "title": "Table configuration",
+  "required": ["base_id", "destination"],
+  "properties": {
+    "base_id": {
+      "type": "string",
+      "title": "Base ID",
+      "format": "select",
+      "description": "The ID of the Airtable base where the table is located.",
+      "propertyOrder": 1,
+      "options": {
+        "async": {
+          "label": "LOAD BASES",
+          "action": "list_bases",
+          "autoload": []
+        }
+      },
+      "enum": []
+    },
+    "destination": {
+      "type": "object",
+      "title": "Destination",
+      "required": ["table_name", "columns", "load_type"],
+      "propertyOrder": 2,
+      "properties": {
+        "table_name": {
+          "type": "string",
+          "title": "Table Name or Table ID",
+          "format": "select",
+          "description": "The name/id of the table to be created/updated in the specified base.",
+          "propertyOrder": 1,
+          "options": {
+            "creatable": true,
+            "async": {
+              "label": "LOAD TABLES",
+              "action": "list_tables",
+              "autoload": ["parameters.base_id"]
+            }
+          },
+          "enum": []
+        },
+        "load_type": {
+          "type": "string",
+          "title": "Load Type",
+          "default": "Append",
+          "description": "Full Load: Delete all rows and reload from scratch; Incremental Load: Update existing records using upsert keys; Append: Add new records without checking for duplicates.",
+          "propertyOrder": 2,
+          "enum": ["Append", "Full Load", "Incremental Load"]
+        },
+        "columns": {
+          "type": "array",
+          "title": "Columns",
+          "description": "⚠️ Writing to calculated columns in Airtable is not supported. Only writable data types are shown. The Load Columns button auto-converts types only for natively typed tables.",
+          "format": "table",
+          "propertyOrder": 3,
+          "items": {
+            "type": "object",
+            "title": "Column",
+            "required": ["source_name", "destination_name", "dtype"],
+            "properties": {
+              "source_name": {
+                "type": "string",
+                "title": "Source Column",
+                "enumSource": "columns",
+                "propertyOrder": 1
+              },
+              "destination_name": {
+                "type": "string",
+                "title": "Destination Column",
+                "propertyOrder": 2
+              },
+              "upsert_key": {
+                "type": "boolean",
+                "title": "Upsert Key",
+                "format": "checkbox",
+                "default": false,
+                "propertyOrder": 3
+              },
+              "dtype": {
+                "type": "string",
+                "title": "Airtable Field Type",
+                "default": "singleLineText",
+                "propertyOrder": 4,
+                "enum": [
+                  "barcode",
+                  "checkbox",
+                  "currency",
+                  "date",
+                  "dateTime",
+                  "email",
+                  "multilineText",
+                  "multipleSelects",
+                  "number",
+                  "percent",
+                  "phoneNumber",
+                  "rating",
+                  "richText",
+                  "singleLineText",
+                  "singleSelect",
+                  "url"
+                ]
+              }
+            }
+          }
+        },
+        "load_columns_button": {
+          "type": "button",
+          "format": "sync-action",
+          "propertyOrder": 4,
+          "description": "Loads columns from storage and attempts to datatype them to Airtable column types.",
+          "options": {
+            "async": {
+              "cache": false,
+              "label": "LOAD COLUMNS",
+              "action": "return_columns_data"
+            }
+          }
+        }
+      }
+    },
+    "_metadata_": {
+      "type": "object",
+      "options": {
+        "hidden": true
+      }
+    },
+      "debug": {
+        "type": "boolean",
+        "title": "Debug mode",
+        "format": "checkbox",
+        "default": false,
+        "description": "If enabled, the component will produce detailed logs",
+        "propertyOrder": 5
+      }
+  }
+}

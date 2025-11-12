@@ -1,94 +1,131 @@
-"""
-Template Component main class.
-
-"""
-
-import csv
 import logging
-from datetime import datetime
-
-from keboola.component.base import ComponentBase
+from keboola.component.base import ComponentBase, sync_action
 from keboola.component.exceptions import UserException
-
+from keboola.component.sync_actions import MessageType, SelectElement, ValidationResult
+import fireducks.pandas as pd
+from client_airtable import AirtableClient
 from configuration import Configuration
+from utils import get_sapi_column_definition, map_to_airtable_type
+
+# FireDucks has very verbose logging, if debug flag = true.
+logging.getLogger("fireducks").setLevel(logging.INFO)
+logging.getLogger("firefw").setLevel(logging.INFO)
 
 
 class Component(ComponentBase):
-    """
-    Extends base class for general Python components. Initializes the CommonInterface
-    and performs configuration validation.
-
-    For easier debugging the data folder is picked up by default from `../data` path,
-    relative to working directory.
-
-    If `debug` parameter is present in the `config.json`, the default logger is set to verbose DEBUG mode.
-    """
-
     def __init__(self):
         super().__init__()
+        self.params = Configuration(**self.configuration.parameters)
+        self.airtable_client = AirtableClient(self.params)
 
     def run(self):
-        """
-        Main execution code
-        """
-
-        # ####### EXAMPLE TO REMOVE
-        # check for missing configuration parameters
-        params = Configuration(**self.configuration.parameters)
-
-        # Access parameters in configuration
-        if params.print_hello:
-            logging.info("Hello World")
-
-        # get input table definitions
+        # Get input data first
         input_tables = self.get_input_tables_definitions()
-        for table in input_tables:
-            logging.info(f"Received input table: {table.name} with path: {table.full_path}")
-
-        if len(input_tables) == 0:
+        if not input_tables:
             raise UserException("No input tables found")
+        input_table_path = input_tables[0].full_path
+        df = pd.read_csv(input_table_path)
 
-        # get last state data/in/state.json from previous run
-        previous_state = self.get_state_file()
-        logging.info(previous_state.get("some_parameter"))
+        try:
+            # Get or create table using the client
+            table = self.airtable_client.get_or_create_table(df)
 
-        # Create output table (Table definition - just metadata)
-        table = self.create_out_table_definition("output.csv", incremental=True, primary_key=["timestamp"])
+            # Build field mapping for the table
+            field_mapping = self.airtable_client.build_field_mapping()
 
-        # get file path of the table (data/out/tables/Features.csv)
-        out_table_path = table.full_path
-        logging.info(out_table_path)
+            # Compare schemas and get the overlap (columns that exist in both input and Airtable)
+            table_schema = self.airtable_client.get_table_schema(table)
+            valid_columns = self.airtable_client.compare_schemas(df, table_schema)
 
-        # Add timestamp column and save into out_table_path
-        input_table = input_tables[0]
-        with (
-            open(input_table.full_path, "r") as inp_file,
-            open(table.full_path, mode="wt", encoding="utf-8", newline="") as out_file,
-        ):
-            reader = csv.DictReader(inp_file)
+            # Only use columns present in both the mapping and Airtable table
+            mappable_columns = [col for col in df.columns if col in field_mapping and col in valid_columns]
+            filtered_df = df[mappable_columns]
+            logging.info(f"📊 Processing {len(mappable_columns)} columns: {mappable_columns}")
 
-            columns = list(reader.fieldnames)
-            # append timestamp
-            columns.append("timestamp")
+            # Process the records with enhanced batch functionality
+            records = filtered_df.to_dict(orient="records")
+            mapped_records = self.airtable_client.map_records(records, field_mapping)
 
-            # write result with column added
-            writer = csv.DictWriter(out_file, fieldnames=columns)
-            writer.writeheader()
-            for in_row in reader:
-                in_row["timestamp"] = datetime.now().isoformat()
-                writer.writerow(in_row)
+            load_type = self.params.destination.load_type
+            # Handle Full Load mode
+            if load_type == "Full Load":
+                self.airtable_client.clear_table_for_full_load(table)
 
-        # Save table manifest (output.csv.manifest) from the Table definition
-        self.write_manifest(table)
+            # Process records using the client
+            self.airtable_client.process_records_batch(table, mapped_records, load_type)
 
-        # Write new state - will be available next run
-        self.write_state_file({"some_state_parameter": "value"})
+        except Exception as e:
+            raise UserException(f"Failed to process data: {str(e)}")
 
-        # ####### EXAMPLE TO REMOVE END
+    # --- Keboola Sync Actions ---
+    @sync_action("testConnection")
+    def testConnection(self):
+        """Test Airtable API token by listing bases"""
+        if not self.params.api_token:
+            raise UserException("API token must be set to test the connection.")
+        try:
+            self.airtable_client.test_connection()
+        except Exception as e:
+            raise UserException(f"Failed to connect to Airtable: {e}")
+        return ValidationResult(
+            "Connection successful",
+            MessageType.SUCCESS,
+        )
+
+    @sync_action("list_bases")
+    def list_bases(self):
+        """List all accessible Airtable bases for dropdown."""
+        if not self.params.api_token:
+            raise UserException("API token must be set to list bases.")
+        return [SelectElement(b.id, b.name) for b in self.airtable_client.list_bases()]
+
+    @sync_action("list_tables")
+    def list_tables(self):
+        """List all tables in the selected base for dropdown."""
+        if not self.params.api_token:
+            raise UserException("API token must be set to list tables.")
+        if not self.params.base_id:
+            raise UserException("Base ID must be set to list tables.")
+        return [SelectElement(t.id, t.name) for t in self.airtable_client.list_tables()]
+
+    @sync_action("return_columns_data")
+    def return_columns_data(self):
+        """Load columns from input mapping and return configuration data."""
+        # 1. Get input table mapping (raise error if not configured)
+        if not self.configuration.tables_input_mapping or len(self.configuration.tables_input_mapping) != 1:
+            raise UserException(
+                "Exactly one input table must be mapped in the configuration. "
+                "Please add an input table mapping in the UI or configuration."
+            )
+
+        # 2. Get table definition from Keboola Storage API
+        table_id = self.configuration.tables_input_mapping[0].source
+        columns = get_sapi_column_definition(
+            table_id,
+            self.environment_variables.url,
+            self.environment_variables.token,
+        )
+
+        # 3. Map Keboola data types to Airtable field types
+        for col in columns:
+            col["dtype"] = map_to_airtable_type(col["dtype"])
+
+        # 4. Return configuration data
+        return {
+            "type": "data",
+            "data": {
+                "base_id": self.params.base_id,
+                "destination": {
+                    "table_name": self.params.destination.table_name,
+                    "load_type": self.params.destination.load_type,
+                    "columns": columns,
+                },
+            },
+        }
 
 
 """
-        Main entrypoint
+Main entrypoint
 """
 if __name__ == "__main__":
     try:
