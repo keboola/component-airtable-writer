@@ -1,6 +1,7 @@
 import logging
+import math
 from datetime import datetime
-import fireducks.pandas as pd
+from typing import Any, Iterable
 from keboola.component.exceptions import UserException
 from pyairtable import Api, Base, Table
 
@@ -35,12 +36,12 @@ class AirtableClient:
         base = self.api.base(self.params.base_id)
         return list(base.schema().tables)
 
-    def get_or_create_table(self, input_df: pd.DataFrame) -> Table:
+    def get_or_create_table(self, input_columns: list) -> Table:
         """
         Get an existing table by name, or create it if it doesn't exist.
 
         Args:
-            input_df: Input DataFrame to infer schema if table needs to be created
+            input_columns: List of input column names
 
         Returns:
             Table object
@@ -58,7 +59,7 @@ class AirtableClient:
                 return base.table(table_name)
             else:
                 logging.info(f"📋 Table '{table_name}' not found in base. Will create new table.")
-                return self._create_table_from_dataframe(base, table_name, input_df, column_configs)
+                return self._create_table_from_config(base, table_name, column_configs)
 
         except Exception as e:
             logging.error(f"❌ Failed to check base schema or create table: {e}")
@@ -112,18 +113,18 @@ class AirtableClient:
             logging.error(f"❌ Failed to get table schema: {e}")
             raise
 
-    def compare_schemas(self, input_df: pd.DataFrame, table_schema: dict) -> set:
+    def compare_schemas(self, input_columns: Iterable[str], table_schema: dict) -> set:
         """
-        Compare input DataFrame schema with existing table schema and log any missing columns.
+        Compare input columns with existing table schema and log any missing columns.
 
         Args:
-            input_df: Input DataFrame
+            input_columns: List or iterable of input column names
             table_schema: Table schema dict
 
         Returns:
             Set of column names that exist in both the input and the Airtable table
         """
-        input_columns = set(input_df.columns) - {"recordId"}
+        input_columns = set(input_columns) - {"recordId"}
         table_fields = set(table_schema.get("fields", []))
         missing_in_table = sorted(input_columns - table_fields)
 
@@ -159,8 +160,8 @@ class AirtableClient:
                 dest_field = field_info["destination_name"]
                 target_dtype = field_info["dtype"]
 
-                # Handle None/NaN
-                if pd.isna(value) or value is None:
+                # Handle None/NaN/empty strings
+                if self._is_null(value):
                     mapped[dest_field] = None
                 # Text fields: always convert to string
                 elif target_dtype in ["singleLineText", "multilineText", "email", "url", "phoneNumber"]:
@@ -171,6 +172,25 @@ class AirtableClient:
             mapped_records.append(mapped)
 
         return mapped_records
+
+    @staticmethod
+    def _is_null(value: Any) -> bool:
+        """
+        Check if a value should be treated as null/None.
+
+        Args:
+            value: Value to check
+
+        Returns:
+            True if value is null/None/NaN/empty string
+        """
+        if value is None:
+            return True
+        if isinstance(value, float) and math.isnan(value):
+            return True
+        if isinstance(value, str) and value.strip() == "":
+            return True
+        return False
 
     def process_records_batch(self, table: Table, mapped_records: list, load_type: str) -> None:
         """
@@ -406,16 +426,13 @@ class AirtableClient:
         }
 
     @staticmethod
-    def _create_table_from_dataframe(
-        base: Base, table_name: str, input_df: pd.DataFrame, column_configs: list
-    ) -> Table:
+    def _create_table_from_config(base: Base, table_name: str, column_configs: list) -> Table:
         """
-        Create a new Airtable table based on DataFrame schema.
+        Create a new Airtable table based on column configuration.
 
         Args:
             base: Airtable Base object
             table_name: Name of the table to create
-            input_df: DataFrame to infer schema from
             column_configs: List of ColumnConfig objects for custom field types (required)
         Returns:
             Created Table object
@@ -434,7 +451,8 @@ class AirtableClient:
             }
 
             if col_config.dtype in ("number", "currency", "percent"):
-                precision = AirtableClient._detect_number_precision(input_df, col_config.source_name, col_config.dtype)
+                # Use default precision: 2 for currency, 0 for others
+                precision = 2 if col_config.dtype == "currency" else 0
                 field_config["options"] = {"precision": precision}
             elif col_config.dtype == "date":
                 field_config["options"] = {"dateFormat": {"name": "iso", "format": "YYYY-MM-DD"}}
@@ -464,41 +482,6 @@ class AirtableClient:
                 f"Table creation failed. Please ensure the table '{table_name}' exists in your Airtable base "
                 f"or create it manually with the following columns: {[f['name'] for f in fields]}"
             )
-
-    @staticmethod
-    def _detect_number_precision(df: pd.DataFrame, column_name: str, dtype: str = "number") -> int:
-        """
-        Detect the appropriate precision for a number field based on actual data.
-
-        Args:
-            df: DataFrame containing the data
-            column_name: Name of the column to analyze
-            dtype: The Airtable field type (number, currency, or percent)
-
-        Returns:
-            Precision value (0-8) representing decimal places needed
-        """
-        if column_name not in df.columns:
-            return 2 if dtype == "currency" else 0
-
-        values = df[column_name].dropna()
-        if len(values) == 0:
-            return 2 if dtype == "currency" else 0
-
-        if pd.api.types.is_integer_dtype(values):
-            return 0
-
-        max_precision = 0
-        for val in values:
-            if pd.notna(val):
-                str_val = str(float(val))
-                if "." in str_val:
-                    decimal_places = len(str_val.split(".")[1].rstrip("0"))
-                    max_precision = max(max_precision, decimal_places)
-
-        if max_precision == 0:
-            return 2 if dtype == "currency" else 0
-        return min(max_precision, 8)
 
 
 # ============================================================================

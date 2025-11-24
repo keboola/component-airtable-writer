@@ -11,7 +11,6 @@ dependencies = [
     "mock>=5.2.0",
     "pydantic>=2.11.3",
     "pyairtable>=3.2.0",
-    "fireducks>=1.4.3",
 ]
 
 [tool.black]
