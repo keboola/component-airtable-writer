@@ -125,23 +125,25 @@
         "hidden": true
       }
     },
-    "advanced_options": {
-      "type": "object",
-      "title": "Advanced Options",
-      "format": "checkbox-group",
-      "propertyOrder": 4,
+    "show_advanced_options": {
+      "type": "boolean",
+      "title": "Show Advanced Options",
+      "format": "checkbox",
+      "default": false,
+      "description": "Enable to configure advanced settings like batch size",
+      "propertyOrder": 4
+    },
+    "batch_size": {
+      "type": "integer",
+      "title": "Batch Size",
+      "default": 1000,
+      "minimum": 1,
+      "maximum": 10000,
+      "description": "Number of records to process in each batch. Lower values use less memory but may be slower. Adjust based on the width and size of your data.",
+      "propertyOrder": 5,
       "options": {
-        "collapsed": true
-      },
-      "properties": {
-        "batch_size": {
-          "type": "integer",
-          "title": "Batch Size",
-          "default": 1000,
-          "minimum": 1,
-          "maximum": 10000,
-          "description": "Number of records to process in each batch. Lower values use less memory but may be slower. Adjust based on the width and size of your data.",
-          "propertyOrder": 1
+        "dependencies": {
+          "show_advanced_options": true
         }
       }
     },

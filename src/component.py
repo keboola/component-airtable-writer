@@ -22,7 +22,7 @@ class Component(ComponentBase):
         input_table_path = input_tables[0].full_path
 
         # Get batch size from configuration (user-configurable under Advanced Options)
-        batch_size = self.params.advanced_options.batch_size
+        batch_size = self.params.batch_size
 
         try:
             # Open CSV file and read column names
