@@ -21,8 +21,8 @@ class Component(ComponentBase):
             raise UserException("No input tables found")
         input_table_path = input_tables[0].full_path
 
-        # Define batch size for processing (adjust based on memory constraints)
-        BATCH_SIZE = 1000
+        # Get batch size from configuration (user-configurable under Advanced Options)
+        batch_size = self.params.advanced_options.batch_size
 
         try:
             # Open CSV file and read column names
@@ -63,7 +63,7 @@ class Component(ComponentBase):
                     buffer.append(filtered_row)
 
                     # Process batch when buffer is full
-                    if len(buffer) >= BATCH_SIZE:
+                    if len(buffer) >= batch_size:
                         mapped_records = self.airtable_client.map_records(buffer, field_mapping)
                         logging.info(f"📦 Processing batch with {len(mapped_records)} records")
                         self.airtable_client.process_records_batch(table, mapped_records, load_type)

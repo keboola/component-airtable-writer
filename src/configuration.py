@@ -22,10 +22,15 @@ class Destination(BaseModel):
     load_type: LoadType = Field(default=LoadType.append)
 
 
+class AdvancedOptions(BaseModel):
+    batch_size: int = Field(default=1000, ge=1, le=10000)
+
+
 class Configuration(BaseModel):
     base_id: str = Field(alias="base_id", default="")
     api_token: str = Field(alias="#api_token")
     destination: Destination = Field(default_factory=Destination)
+    advanced_options: AdvancedOptions = Field(default_factory=AdvancedOptions)
     debug: bool = False
 
     def __init__(self, **data):
