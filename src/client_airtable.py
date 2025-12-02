@@ -5,6 +5,8 @@ from typing import Any, Iterable
 from keboola.component.exceptions import UserException
 from pyairtable import Api, Base, Table
 
+API_BATCH_SIZE = 10  # Airtable API limitation: max 10 records per batch API call
+
 
 class AirtableClient:
     """
@@ -206,12 +208,11 @@ class AirtableClient:
         total_created = 0
         total_updated = 0
         total_errors = 0
-        BATCH_SIZE = 10
 
         if load_type == "Full Load":
             # Table should already be cleared before this is called
             logging.info(f"Processing {len(mapped_records)} records as creates (full load)")
-            create_results = self._process_create_batches(table, mapped_records, BATCH_SIZE)
+            create_results = self._process_create_batches(table, mapped_records, API_BATCH_SIZE)
             log_rows.extend(create_results["log_rows"])
             total_created += create_results["created_count"]
             total_errors += create_results["error_count"]
@@ -226,7 +227,7 @@ class AirtableClient:
             logging.info(
                 f"Processing {len(mapped_records)} records as incremental upsert using keys: {upsert_key_fields}"
             )
-            upsert_results = self._process_upsert_batches(table, mapped_records, upsert_key_fields, BATCH_SIZE)
+            upsert_results = self._process_upsert_batches(table, mapped_records, upsert_key_fields, API_BATCH_SIZE)
             log_rows.extend(upsert_results["log_rows"])
             total_created += upsert_results["created_count"]
             total_updated += upsert_results.get("updated_count", 0)
@@ -235,7 +236,7 @@ class AirtableClient:
 
         elif load_type == "Append":
             logging.info(f"Processing {len(mapped_records)} records as creates (Append mode)")
-            create_results = self._process_create_batches(table, mapped_records, BATCH_SIZE)
+            create_results = self._process_create_batches(table, mapped_records, API_BATCH_SIZE)
             log_rows.extend(create_results["log_rows"])
             total_created += create_results["created_count"]
             total_errors += create_results["error_count"]
@@ -262,9 +263,8 @@ class AirtableClient:
             all_records = table.all()
             if all_records:
                 record_ids = [rec["id"] for rec in all_records]
-                batch_size = 10
-                for i in range(0, len(record_ids), batch_size):
-                    batch = record_ids[i : i + batch_size]
+                for i in range(0, len(record_ids), API_BATCH_SIZE):
+                    batch = record_ids[i : i + API_BATCH_SIZE]
                     table.batch_delete(batch)
                 logging.info(f"🗑️ Deleted {len(record_ids)} existing records")
             else:
