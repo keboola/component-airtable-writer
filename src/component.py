@@ -1,15 +1,11 @@
+import csv
 import logging
 from keboola.component.base import ComponentBase, sync_action
 from keboola.component.exceptions import UserException
 from keboola.component.sync_actions import MessageType, SelectElement, ValidationResult
-import fireducks.pandas as pd
 from client_airtable import AirtableClient
 from configuration import Configuration
 from utils import get_sapi_column_definition, map_to_airtable_type
-
-# FireDucks has very verbose logging, if debug flag = true.
-logging.getLogger("fireducks").setLevel(logging.INFO)
-logging.getLogger("firefw").setLevel(logging.INFO)
 
 
 class Component(ComponentBase):
@@ -24,35 +20,64 @@ class Component(ComponentBase):
         if not input_tables:
             raise UserException("No input tables found")
         input_table_path = input_tables[0].full_path
-        df = pd.read_csv(input_table_path)
+
+        # Get batch size from configuration (user-configurable under Advanced Options)
+        batch_size = self.params.batch_size
 
         try:
-            # Get or create table using the client
-            table = self.airtable_client.get_or_create_table(df)
+            # Open CSV file and read column names
+            with open(input_table_path, newline="", encoding="utf-8") as csvfile:
+                reader = csv.DictReader(csvfile)
+                input_columns = reader.fieldnames or []
 
-            # Build field mapping for the table
-            field_mapping = self.airtable_client.build_field_mapping()
+                if not input_columns:
+                    logging.warning("Input file has no columns, nothing to process")
+                    return
 
-            # Compare schemas and get the overlap (columns that exist in both input and Airtable)
-            table_schema = self.airtable_client.get_table_schema(table)
-            valid_columns = self.airtable_client.compare_schemas(df, table_schema)
+                # Get or create table using the client (no DataFrame needed)
+                table = self.airtable_client.get_or_create_table(input_columns)
 
-            # Only use columns present in both the mapping and Airtable table
-            mappable_columns = [col for col in df.columns if col in field_mapping and col in valid_columns]
-            filtered_df = df[mappable_columns]
-            logging.info(f"📊 Processing {len(mappable_columns)} columns: {mappable_columns}")
+                # Build field mapping for the table
+                field_mapping = self.airtable_client.build_field_mapping()
 
-            # Process the records with enhanced batch functionality
-            records = filtered_df.to_dict(orient="records")
-            mapped_records = self.airtable_client.map_records(records, field_mapping)
+                # Compare schemas and get the overlap (columns that exist in both input and Airtable)
+                table_schema = self.airtable_client.get_table_schema(table)
+                valid_columns = self.airtable_client.compare_schemas(input_columns, table_schema)
 
-            load_type = self.params.destination.load_type
-            # Handle Full Load mode
-            if load_type == "Full Load":
-                self.airtable_client.clear_table_for_full_load(table)
+                # Only use columns present in both the mapping and Airtable table
+                mappable_columns = [col for col in input_columns if col in field_mapping and col in valid_columns]
+                logging.info(f"📊 Processing {len(mappable_columns)} columns: {mappable_columns}")
 
-            # Process records using the client
-            self.airtable_client.process_records_batch(table, mapped_records, load_type)
+                load_type = self.params.destination.load_type
+                # Handle Full Load mode - clear table once before processing
+                if load_type == "Full Load":
+                    self.airtable_client.clear_table_for_full_load(table)
+
+                # Stream CSV rows and process in batches to avoid memory issues
+                total_records_processed = 0
+                buffer = []
+
+                for row in reader:
+                    # Filter to only mappable columns
+                    filtered_row = {col: row.get(col, "") for col in mappable_columns}
+                    buffer.append(filtered_row)
+
+                    # Process batch when buffer is full
+                    if len(buffer) >= batch_size:
+                        mapped_records = self.airtable_client.map_records(buffer, field_mapping)
+                        logging.info(f"📦 Processing batch with {len(mapped_records)} records")
+                        self.airtable_client.process_records_batch(table, mapped_records, load_type)
+                        total_records_processed += len(mapped_records)
+                        buffer = []
+
+                # Process remaining records in buffer
+                if buffer:
+                    mapped_records = self.airtable_client.map_records(buffer, field_mapping)
+                    logging.info(f"📦 Processing final batch with {len(mapped_records)} records")
+                    self.airtable_client.process_records_batch(table, mapped_records, load_type)
+                    total_records_processed += len(mapped_records)
+
+                logging.info(f"✅ Successfully processed {total_records_processed} total records")
 
         except Exception as e:
             raise UserException(f"Failed to process data: {str(e)}")
