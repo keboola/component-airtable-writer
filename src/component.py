@@ -47,8 +47,10 @@ class Component(ComponentBase):
                 # Only use columns present in both the mapping and Airtable table
                 mappable_columns = [col for col in input_columns if col in field_mapping and col in valid_columns]
                 destination_columns = [field_mapping[col]["destination_name"] for col in mappable_columns]
-                logging.info(f"📊 Processing {len(mappable_columns)} columns (source → Airtable): "
-                             f"{[f'{src} → {dest}' for src, dest in zip(mappable_columns, destination_columns)]}")
+                logging.info(
+                    f"📊 Processing {len(mappable_columns)} columns (source → Airtable): "
+                    f"{[f'{src} → {dest}' for src, dest in zip(mappable_columns, destination_columns)]}"
+                )
 
                 load_type = self.params.destination.load_type
                 # Handle Full Load mode - clear table once before processing
@@ -66,7 +68,7 @@ class Component(ComponentBase):
 
                     # Process batch when buffer is full
                     if len(buffer) >= batch_size:
-                        mapped_records = self.airtable_client.map_records(buffer, field_mapping)
+                        mapped_records = self.airtable_client.map_records(buffer, field_mapping, table_schema)
                         logging.info(f"📦 Processing batch with {len(mapped_records)} records")
                         self.airtable_client.process_records_batch(table, mapped_records, load_type)
                         total_records_processed += len(mapped_records)
@@ -74,7 +76,7 @@ class Component(ComponentBase):
 
                 # Process remaining records in buffer
                 if buffer:
-                    mapped_records = self.airtable_client.map_records(buffer, field_mapping)
+                    mapped_records = self.airtable_client.map_records(buffer, field_mapping, table_schema)
                     logging.info(f"📦 Processing final batch with {len(mapped_records)} records")
                     self.airtable_client.process_records_batch(table, mapped_records, load_type)
                     total_records_processed += len(mapped_records)

@@ -93,7 +93,8 @@ class AirtableClient:
         column_configs = self.params.destination.columns
         if not column_configs:
             raise UserException("Column configuration is required.")
-        return {
+
+        field_mapping = {
             col.source_name: {
                 "destination_name": col.destination_name,
                 "dtype": col.dtype,
@@ -102,6 +103,13 @@ class AirtableClient:
             for col in column_configs
             if col.destination_name
         }
+
+        # Debug logging to show field types
+        logging.debug("🔍 Field mapping configuration:")
+        for source_name, field_info in field_mapping.items():
+            logging.debug(f"  {source_name} → {field_info['destination_name']} (dtype: {field_info['dtype']})")
+
+        return field_mapping
 
     def get_table_schema(self, table: Table) -> dict:
         """
@@ -124,6 +132,9 @@ class AirtableClient:
             }
 
             logging.info(f"📋 Retrieved schema for table '{table_schema.name}': {schema['fields']}")
+            logging.debug("🔍 Airtable field types:")
+            for field_name, field_type in schema["field_types"].items():
+                logging.debug(f"  {field_name}: {field_type}")
             return schema
 
         except Exception as e:
@@ -147,29 +158,50 @@ class AirtableClient:
         """
         input_columns = set(input_columns) - {"recordId"}
         table_fields = set(table_schema.get("fields", []))
+        field_types = table_schema.get("field_types", {})
+
+        # Read-only field types that cannot accept values
+        READ_ONLY_TYPES = {
+            "autoNumber",
+            "formula",
+            "rollup",
+            "count",
+            "createdTime",
+            "lastModifiedTime",
+            "createdBy",
+            "lastModifiedBy",
+        }
 
         # Build source -> destination mapping from configuration
         column_configs = self.params.destination.columns or []
-        source_to_dest = {
-            col.source_name: col.destination_name
-            for col in column_configs
-            if col.destination_name
-        }
+        source_to_dest = {col.source_name: col.destination_name for col in column_configs if col.destination_name}
 
         # Only consider columns that are both in the CSV and configured
         configured_sources = input_columns & set(source_to_dest)
 
-        # Source columns whose *destination* field exists in Airtable
-        overlap_sources = {
-            src for src in configured_sources
-            if source_to_dest[src] in table_fields
-        }
+        # Check for read-only fields and exclude them
+        read_only_sources = []
+        writable_sources = set()
+
+        for src in configured_sources:
+            dest_field = source_to_dest[src]
+            if dest_field in table_fields:
+                field_type = field_types.get(dest_field, "")
+                if field_type in READ_ONLY_TYPES:
+                    read_only_sources.append((src, dest_field, field_type))
+                else:
+                    writable_sources.add(src)
+
+        # Warn about read-only fields
+        if read_only_sources:
+            for src, dest, ftype in read_only_sources:
+                logging.warning(
+                    f"⚠️ Skipping field '{dest}' (source: '{src}'): "
+                    f"Field type '{ftype}' is read-only and cannot accept values"
+                )
 
         # For warnings, report configured mappings whose destination field is missing
-        missing_sources = sorted(
-            src for src in configured_sources
-            if source_to_dest[src] not in table_fields
-        )
+        missing_sources = sorted(src for src in configured_sources if source_to_dest[src] not in table_fields)
         if missing_sources:
             missing_dest_names = [source_to_dest[s] for s in missing_sources]
             logging.warning(
@@ -177,37 +209,66 @@ class AirtableClient:
                 f"{missing_dest_names} (source columns: {missing_sources})"
             )
 
-        return overlap_sources
+        return writable_sources
 
-    def map_records(self, records: list, field_mapping: dict) -> list:
+    def map_records(self, records: list, field_mapping: dict, table_schema: dict | None = None) -> list:
         """
         Map input records to Airtable field names and convert values to match target field types.
 
         Args:
             records: List of input records (dicts) with only mappable columns
             field_mapping: Mapping from source names to dict with destination_name, dtype, and upsert_key
+            table_schema: Optional table schema dict with actual Airtable field types (preferred over config)
 
         Returns:
             List of mapped record dicts
         """
         mapped_records = []
 
-        for rec in records:
+        # Get actual Airtable field types from schema if available
+        airtable_field_types = {}
+        if table_schema:
+            airtable_field_types = table_schema.get("field_types", {})
+
+        for idx, rec in enumerate(records):
             mapped = {}
 
             for source_col, value in rec.items():
                 field_info = field_mapping[source_col]
                 dest_field = field_info["destination_name"]
-                target_dtype = field_info["dtype"]
+                config_dtype = field_info["dtype"]
+
+                # Use actual Airtable field type if available, otherwise use configured dtype
+                target_dtype = airtable_field_types.get(dest_field, config_dtype)
+
+                # Warn on first record if there's a mismatch
+                if idx == 0 and dest_field in airtable_field_types:
+                    if config_dtype != target_dtype:
+                        logging.warning(
+                            f"⚠️ Field '{dest_field}': config dtype '{config_dtype}' doesn't match "
+                            f"Airtable type '{target_dtype}'. Using Airtable type '{target_dtype}' for conversion."
+                        )
 
                 # Handle None/NaN/empty strings
                 if self._is_null(value):
                     mapped[dest_field] = None
                 # Text fields: always convert to string
-                elif target_dtype in ["singleLineText", "multilineText", "email", "url", "phoneNumber"]:
+                elif target_dtype in ["singleLineText", "multilineText", "email", "url", "phoneNumber", "richText"]:
                     mapped[dest_field] = str(value)
+                # Numeric fields: convert to number (int or float)
+                elif target_dtype in ["number", "currency", "percent", "rating", "duration"]:
+                    mapped[dest_field] = self._convert_to_number(value)
+                # Checkbox/Boolean fields: convert to boolean
+                elif target_dtype == "checkbox":
+                    mapped[dest_field] = self._convert_to_boolean(value)
                 else:
                     mapped[dest_field] = value
+
+            # Debug logging for first record to see actual values and types
+            if idx == 0:
+                logging.debug("🔍 First mapped record sample:")
+                for field_name, field_value in mapped.items():
+                    logging.debug(f"  {field_name}: {field_value!r} (type: {type(field_value).__name__})")
 
             mapped_records.append(mapped)
 
@@ -231,6 +292,62 @@ class AirtableClient:
         if isinstance(value, str) and value.strip() == "":
             return True
         return False
+
+    @staticmethod
+    def _convert_to_number(value: Any) -> int | float:
+        """
+        Convert a value to a number (int or float).
+
+        Args:
+            value: Value to convert (typically a string from CSV)
+
+        Returns:
+            int or float representation of the value
+
+        Raises:
+            ValueError: If the value cannot be converted to a number
+        """
+        if isinstance(value, (int, float)):
+            return value
+
+        # Convert string to number
+        try:
+            # Try float first
+            num_value = float(value)
+            # If it's a whole number, return as int
+            if num_value.is_integer():
+                return int(num_value)
+            return num_value
+        except (ValueError, AttributeError) as e:
+            raise ValueError(f"Cannot convert '{value}' to number") from e
+
+    @staticmethod
+    def _convert_to_boolean(value: Any) -> bool:
+        """
+        Convert a value to a boolean.
+
+        Args:
+            value: Value to convert (typically a string from CSV)
+
+        Returns:
+            bool representation of the value
+        """
+        if isinstance(value, bool):
+            return value
+
+        # Handle string representations
+        if isinstance(value, str):
+            value_lower = value.lower().strip()
+            if value_lower in ("true", "1", "yes", "y"):
+                return True
+            if value_lower in ("false", "0", "no", "n", ""):
+                return False
+
+        # Handle numeric values
+        try:
+            return bool(int(value))
+        except (ValueError, TypeError):
+            return bool(value)
 
     def process_records_batch(self, table: Table, mapped_records: list, load_type: str) -> None:
         """
