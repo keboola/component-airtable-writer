@@ -46,7 +46,9 @@ class Component(ComponentBase):
 
                 # Only use columns present in both the mapping and Airtable table
                 mappable_columns = [col for col in input_columns if col in field_mapping and col in valid_columns]
-                logging.info(f"📊 Processing {len(mappable_columns)} columns: {mappable_columns}")
+                destination_columns = [field_mapping[col]["destination_name"] for col in mappable_columns]
+                logging.info(f"📊 Processing {len(mappable_columns)} columns (source → Airtable): "
+                             f"{[f'{src} → {dest}' for src, dest in zip(mappable_columns, destination_columns)]}")
 
                 load_type = self.params.destination.load_type
                 # Handle Full Load mode - clear table once before processing
