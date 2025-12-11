@@ -132,29 +132,52 @@ class AirtableClient:
 
     def compare_schemas(self, input_columns: Iterable[str], table_schema: dict) -> set:
         """
-        Compare input columns with existing table schema and log any missing columns.
+        Compare input columns with existing table schema using the configured column mapping.
+
+        This method checks if the **destination names** (Airtable field names) from the column
+        configuration exist in the Airtable table schema. It returns source column names
+        for which the mapped destination field exists.
 
         Args:
-            input_columns: List or iterable of input column names
-            table_schema: Table schema dict
+            input_columns: List or iterable of input column names (source names from CSV)
+            table_schema: Table schema dict with 'fields' key containing Airtable field names
 
         Returns:
-            Set of column names that exist in both the input and the Airtable table
+            Set of source column names whose mapped destination field exists in Airtable
         """
         input_columns = set(input_columns) - {"recordId"}
         table_fields = set(table_schema.get("fields", []))
-        missing_in_table = sorted(input_columns - table_fields)
 
-        # Calculate the overlap (columns that exist in both)
-        overlap = input_columns & table_fields
+        # Build source -> destination mapping from configuration
+        column_configs = self.params.destination.columns or []
+        source_to_dest = {
+            col.source_name: col.destination_name
+            for col in column_configs
+            if col.destination_name
+        }
 
-        # Log warning if columns are missing in Airtable
-        if missing_in_table:
+        # Only consider columns that are both in the CSV and configured
+        configured_sources = input_columns & set(source_to_dest)
+
+        # Source columns whose *destination* field exists in Airtable
+        overlap_sources = {
+            src for src in configured_sources
+            if source_to_dest[src] in table_fields
+        }
+
+        # For warnings, report configured mappings whose destination field is missing
+        missing_sources = sorted(
+            src for src in configured_sources
+            if source_to_dest[src] not in table_fields
+        )
+        if missing_sources:
+            missing_dest_names = [source_to_dest[s] for s in missing_sources]
             logging.warning(
-                f"⚠️ The following input columns are missing in Airtable and will not be written: {missing_in_table}"
+                f"⚠️ The following mapped Airtable fields are missing in the table and will not be written: "
+                f"{missing_dest_names} (source columns: {missing_sources})"
             )
 
-        return overlap
+        return overlap_sources
 
     def map_records(self, records: list, field_mapping: dict) -> list:
         """
