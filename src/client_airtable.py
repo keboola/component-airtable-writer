@@ -40,7 +40,11 @@ class AirtableClient:
 
     def get_or_create_table(self, input_columns: list) -> Table:
         """
-        Get an existing table by name, or create it if it doesn't exist.
+        Get an existing table by name or ID, or create it if it doesn't exist.
+
+        The table_name parameter can be either:
+        - An actual table name (e.g., "My Table")
+        - A table ID (e.g., "tblXXXXXXXXXXXXXX") - this happens when user selects from dropdown
 
         Args:
             input_columns: List of input column names
@@ -49,23 +53,34 @@ class AirtableClient:
             Table object
         """
         base = self.api.base(self.params.base_id)
-        table_name = self.params.destination.table_name
+        table_name_or_id = self.params.destination.table_name
         column_configs = self.params.destination.columns
 
         try:
             base_schema = base.schema()
-            existing_table_names = [table.name for table in base_schema.tables]
 
-            if table_name in existing_table_names:
-                logging.info(f"📋 Found existing table '{table_name}'")
-                return base.table(table_name)
-            else:
-                logging.info(f"📋 Table '{table_name}' not found in base. Will create new table.")
-                return self._create_table_from_config(base, table_name, column_configs)
+            # Build lookup dictionaries for both name and ID
+            tables_by_name = {table.name: table for table in base_schema.tables}
+            tables_by_id = {table.id: table for table in base_schema.tables}
+
+            # First, check if it's a table ID (IDs start with "tbl")
+            if table_name_or_id in tables_by_id:
+                matched_table = tables_by_id[table_name_or_id]
+                logging.info(f"📋 Found existing table by ID: '{matched_table.name}' (ID: {table_name_or_id})")
+                return base.table(table_name_or_id)
+
+            # Then, check if it's a table name
+            if table_name_or_id in tables_by_name:
+                logging.info(f"📋 Found existing table by name: '{table_name_or_id}'")
+                return base.table(table_name_or_id)
+
+            # Table not found by name or ID - create new table
+            logging.info(f"📋 Table '{table_name_or_id}' not found in base. Will create new table.")
+            return self._create_table_from_config(base, table_name_or_id, column_configs)
 
         except Exception as e:
             logging.error(f"❌ Failed to check base schema or create table: {e}")
-            raise UserException(f"Failed to access or create table '{table_name}': {e}")
+            raise UserException(f"Failed to access or create table '{table_name_or_id}': {e}")
 
     def build_field_mapping(self) -> dict[str, dict]:
         """
