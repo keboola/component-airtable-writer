@@ -40,7 +40,11 @@ class AirtableClient:
 
     def get_or_create_table(self, input_columns: list) -> Table:
         """
-        Get an existing table by name, or create it if it doesn't exist.
+        Get an existing table by name or ID, or create it if it doesn't exist.
+
+        The table_name parameter can be either:
+        - An actual table name (e.g., "My Table")
+        - A table ID (e.g., "tblXXXXXXXXXXXXXX") - this happens when user selects from dropdown
 
         Args:
             input_columns: List of input column names
@@ -49,23 +53,34 @@ class AirtableClient:
             Table object
         """
         base = self.api.base(self.params.base_id)
-        table_name = self.params.destination.table_name
+        table_name_or_id = self.params.destination.table_name
         column_configs = self.params.destination.columns
 
         try:
             base_schema = base.schema()
-            existing_table_names = [table.name for table in base_schema.tables]
 
-            if table_name in existing_table_names:
-                logging.info(f"📋 Found existing table '{table_name}'")
-                return base.table(table_name)
-            else:
-                logging.info(f"📋 Table '{table_name}' not found in base. Will create new table.")
-                return self._create_table_from_config(base, table_name, column_configs)
+            # Build lookup dictionaries for both name and ID
+            tables_by_name = {table.name: table for table in base_schema.tables}
+            tables_by_id = {table.id: table for table in base_schema.tables}
+
+            # First, check if it's a table ID (IDs start with "tbl")
+            if table_name_or_id in tables_by_id:
+                matched_table = tables_by_id[table_name_or_id]
+                logging.info(f"📋 Found existing table by ID: '{matched_table.name}' (ID: {table_name_or_id})")
+                return base.table(table_name_or_id)
+
+            # Then, check if it's a table name
+            if table_name_or_id in tables_by_name:
+                logging.info(f"📋 Found existing table by name: '{table_name_or_id}'")
+                return base.table(table_name_or_id)
+
+            # Table not found by name or ID - create new table
+            logging.info(f"📋 Table '{table_name_or_id}' not found in base. Will create new table.")
+            return self._create_table_from_config(base, table_name_or_id, column_configs)
 
         except Exception as e:
             logging.error(f"❌ Failed to check base schema or create table: {e}")
-            raise UserException(f"Failed to access or create table '{table_name}': {e}")
+            raise UserException(f"Failed to access or create table '{table_name_or_id}': {e}")
 
     def build_field_mapping(self) -> dict[str, dict]:
         """
@@ -78,7 +93,8 @@ class AirtableClient:
         column_configs = self.params.destination.columns
         if not column_configs:
             raise UserException("Column configuration is required.")
-        return {
+
+        field_mapping = {
             col.source_name: {
                 "destination_name": col.destination_name,
                 "dtype": col.dtype,
@@ -87,6 +103,13 @@ class AirtableClient:
             for col in column_configs
             if col.destination_name
         }
+
+        # Debug logging to show field types
+        logging.debug("🔍 Field mapping configuration:")
+        for source_name, field_info in field_mapping.items():
+            logging.debug(f"  {source_name} → {field_info['destination_name']} (dtype: {field_info['dtype']})")
+
+        return field_mapping
 
     def get_table_schema(self, table: Table) -> dict:
         """
@@ -109,6 +132,9 @@ class AirtableClient:
             }
 
             logging.info(f"📋 Retrieved schema for table '{table_schema.name}': {schema['fields']}")
+            logging.debug("🔍 Airtable field types:")
+            for field_name, field_type in schema["field_types"].items():
+                logging.debug(f"  {field_name}: {field_type}")
             return schema
 
         except Exception as e:
@@ -117,59 +143,132 @@ class AirtableClient:
 
     def compare_schemas(self, input_columns: Iterable[str], table_schema: dict) -> set:
         """
-        Compare input columns with existing table schema and log any missing columns.
+        Compare input columns with existing table schema using the configured column mapping.
+
+        This method checks if the **destination names** (Airtable field names) from the column
+        configuration exist in the Airtable table schema. It returns source column names
+        for which the mapped destination field exists.
 
         Args:
-            input_columns: List or iterable of input column names
-            table_schema: Table schema dict
+            input_columns: List or iterable of input column names (source names from CSV)
+            table_schema: Table schema dict with 'fields' key containing Airtable field names
 
         Returns:
-            Set of column names that exist in both the input and the Airtable table
+            Set of source column names whose mapped destination field exists in Airtable
         """
         input_columns = set(input_columns) - {"recordId"}
         table_fields = set(table_schema.get("fields", []))
-        missing_in_table = sorted(input_columns - table_fields)
+        field_types = table_schema.get("field_types", {})
 
-        # Calculate the overlap (columns that exist in both)
-        overlap = input_columns & table_fields
+        # Read-only field types that cannot accept values
+        READ_ONLY_TYPES = {
+            "autoNumber",
+            "formula",
+            "rollup",
+            "count",
+            "createdTime",
+            "lastModifiedTime",
+            "createdBy",
+            "lastModifiedBy",
+        }
 
-        # Log warning if columns are missing in Airtable
-        if missing_in_table:
+        # Build source -> destination mapping from configuration
+        column_configs = self.params.destination.columns or []
+        source_to_dest = {col.source_name: col.destination_name for col in column_configs if col.destination_name}
+
+        # Only consider columns that are both in the CSV and configured
+        configured_sources = input_columns & set(source_to_dest)
+
+        # Check for read-only fields and exclude them
+        read_only_sources = []
+        writable_sources = set()
+
+        for src in configured_sources:
+            dest_field = source_to_dest[src]
+            if dest_field in table_fields:
+                field_type = field_types.get(dest_field, "")
+                if field_type in READ_ONLY_TYPES:
+                    read_only_sources.append((src, dest_field, field_type))
+                else:
+                    writable_sources.add(src)
+
+        # Warn about read-only fields
+        if read_only_sources:
+            for src, dest, ftype in read_only_sources:
+                logging.warning(
+                    f"⚠️ Skipping field '{dest}' (source: '{src}'): "
+                    f"Field type '{ftype}' is read-only and cannot accept values"
+                )
+
+        # For warnings, report configured mappings whose destination field is missing
+        missing_sources = sorted(src for src in configured_sources if source_to_dest[src] not in table_fields)
+        if missing_sources:
+            missing_dest_names = [source_to_dest[s] for s in missing_sources]
             logging.warning(
-                f"⚠️ The following input columns are missing in Airtable and will not be written: {missing_in_table}"
+                f"⚠️ The following mapped Airtable fields are missing in the table and will not be written: "
+                f"{missing_dest_names} (source columns: {missing_sources})"
             )
 
-        return overlap
+        return writable_sources
 
-    def map_records(self, records: list, field_mapping: dict) -> list:
+    def map_records(self, records: list, field_mapping: dict, table_schema: dict | None = None) -> list:
         """
         Map input records to Airtable field names and convert values to match target field types.
 
         Args:
             records: List of input records (dicts) with only mappable columns
             field_mapping: Mapping from source names to dict with destination_name, dtype, and upsert_key
+            table_schema: Optional table schema dict with actual Airtable field types (preferred over config)
 
         Returns:
             List of mapped record dicts
         """
         mapped_records = []
 
-        for rec in records:
+        # Get actual Airtable field types from schema if available
+        airtable_field_types = {}
+        if table_schema:
+            airtable_field_types = table_schema.get("field_types", {})
+
+        for idx, rec in enumerate(records):
             mapped = {}
 
             for source_col, value in rec.items():
                 field_info = field_mapping[source_col]
                 dest_field = field_info["destination_name"]
-                target_dtype = field_info["dtype"]
+                config_dtype = field_info["dtype"]
+
+                # Use actual Airtable field type if available, otherwise use configured dtype
+                target_dtype = airtable_field_types.get(dest_field, config_dtype)
+
+                # Warn on first record if there's a mismatch
+                if idx == 0 and dest_field in airtable_field_types:
+                    if config_dtype != target_dtype:
+                        logging.warning(
+                            f"⚠️ Field '{dest_field}': config dtype '{config_dtype}' doesn't match "
+                            f"Airtable type '{target_dtype}'. Using Airtable type '{target_dtype}' for conversion."
+                        )
 
                 # Handle None/NaN/empty strings
                 if self._is_null(value):
                     mapped[dest_field] = None
                 # Text fields: always convert to string
-                elif target_dtype in ["singleLineText", "multilineText", "email", "url", "phoneNumber"]:
+                elif target_dtype in ["singleLineText", "multilineText", "email", "url", "phoneNumber", "richText"]:
                     mapped[dest_field] = str(value)
+                # Numeric fields: convert to number (int or float)
+                elif target_dtype in ["number", "currency", "percent", "rating", "duration"]:
+                    mapped[dest_field] = self._convert_to_number(value)
+                # Checkbox/Boolean fields: convert to boolean
+                elif target_dtype == "checkbox":
+                    mapped[dest_field] = self._convert_to_boolean(value)
                 else:
                     mapped[dest_field] = value
+
+            # Debug logging for first record to see actual values and types
+            if idx == 0:
+                logging.debug("🔍 First mapped record sample:")
+                for field_name, field_value in mapped.items():
+                    logging.debug(f"  {field_name}: {field_value!r} (type: {type(field_value).__name__})")
 
             mapped_records.append(mapped)
 
@@ -193,6 +292,62 @@ class AirtableClient:
         if isinstance(value, str) and value.strip() == "":
             return True
         return False
+
+    @staticmethod
+    def _convert_to_number(value: Any) -> int | float:
+        """
+        Convert a value to a number (int or float).
+
+        Args:
+            value: Value to convert (typically a string from CSV)
+
+        Returns:
+            int or float representation of the value
+
+        Raises:
+            ValueError: If the value cannot be converted to a number
+        """
+        if isinstance(value, (int, float)):
+            return value
+
+        # Convert string to number
+        try:
+            # Try float first
+            num_value = float(value)
+            # If it's a whole number, return as int
+            if num_value.is_integer():
+                return int(num_value)
+            return num_value
+        except (ValueError, AttributeError) as e:
+            raise ValueError(f"Cannot convert '{value}' to number") from e
+
+    @staticmethod
+    def _convert_to_boolean(value: Any) -> bool:
+        """
+        Convert a value to a boolean.
+
+        Args:
+            value: Value to convert (typically a string from CSV)
+
+        Returns:
+            bool representation of the value
+        """
+        if isinstance(value, bool):
+            return value
+
+        # Handle string representations
+        if isinstance(value, str):
+            value_lower = value.lower().strip()
+            if value_lower in ("true", "1", "yes", "y"):
+                return True
+            if value_lower in ("false", "0", "no", "n", ""):
+                return False
+
+        # Handle numeric values
+        try:
+            return bool(int(value))
+        except (ValueError, TypeError):
+            return bool(value)
 
     def process_records_batch(self, table: Table, mapped_records: list, load_type: str) -> None:
         """
